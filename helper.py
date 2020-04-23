@@ -4,7 +4,10 @@ import re
 import math
 
 TIMEZONE_EST = 'US/Eastern'
+TIMEZONE_CET = 'Europe/Zurich'
 TIMEZONE_UTC = 'UTC'
+TIMEZONE_LOC = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo            
+    
 
 def convert_tws_date_to_datetime(d, tz_name=None):
     """Extract datetime information from IB's date format."""
@@ -199,7 +202,7 @@ class TimeHelper(object):
         if unit is None:
             raise ValueError('Invalid conversion.')
         elif to_type == 'bar_size':
-            if self.n > 1 and (k == 'min' or k == 'hour'):                
+            if self.n > 1 and (unit == 'min' or unit == 'hour'):
                 unit += 's'  # Make units plural for minutes and hours
         return unit
     
@@ -246,3 +249,4 @@ class TimeHelper(object):
             raise ValueError('Unknown frequency unit: {}'.format(_units))
 
         return factor if not invert else 1/factor
+        

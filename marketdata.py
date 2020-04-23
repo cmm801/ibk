@@ -37,10 +37,6 @@ __CLIENT_ID = 1              # Reserve client id 0 for the main application
 # The timezone specified at login to TWS. All historical data refer to this timezone.
 TWS_TIMEZONE = 'US/Eastern'
 
-# Keep track of market data requests
-MAX_TWS_REQUESTS_PER_10_MINUTES = 60
-_market_data_requests = collections.deque(maxlen=MAX_TWS_REQUESTS_PER_10_MINUTES)
-
 # Status flags
 _STATUS_NEW = 0
 _STATUS_REQUEST_PLACED = 1
@@ -48,6 +44,12 @@ _STATUS_STREAM_CLOSED = 2
 
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
+
+# Default arguments
+DEFAULT_USE_RTH = False
+
+# Activate latency monitoring for tests of streaming data
+MONITOR_LATENCY = False
 
 class DataRequestError(Exception):
     """Exceptions generated during requesting historical market data.
@@ -212,7 +214,7 @@ class MarketDataRequest(AbstractDataRequest):
 class HistoricalDataRequest(AbstractDataRequest):
     def __init__(self, parent_app, contract, is_snapshot, frequency="", 
                                  start="", end="",
-                                 duration="", use_rth=None, data_type='TRADES'):
+                                 duration="", use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
         self.start = start
         self.end = end
         self.duration = duration             # e.g., 1s, 1M (1 minute), 1d, 1h, etc.
@@ -228,6 +230,16 @@ class HistoricalDataRequest(AbstractDataRequest):
     # abstractmethod
     def append_data(self, new_data):
         self.__market_data.append(new_data)
+        
+    def update_data(self, new_data):
+        """Only works for single request objects, and is used for handling streaming updates.
+           If the new row has the same date as the previously received row, then replace it.
+           Otherwise, just append the new data as normal.
+       """
+        if self.__market_data and new_data['date'] == self.__market_data[-1]['date']:
+            self.__market_data[-1] = new_data
+        else:
+            self.__market_data.append(new_data)
         
     # abstractmethod
     def _request_data(self, req_id):
@@ -248,18 +260,21 @@ class HistoricalDataRequest(AbstractDataRequest):
         if len(self.get_req_ids()) == 1:
             return [self.__market_data]
         else:
-            return [s.get_data() for s in self.get_subrequests()]
+            return [s.get_data()[0] for s in self.get_subrequests()]
         
     def get_dataframe(self):
-        data_list = self.get_data()
-        df = pd.DataFrame()
-        for data in data_list:
-            tmp_df = pd.DataFrame(data)
-            tmp_df.set_index('date', inplace=True)
-            df = pd.concat([df, tmp_df])
-
-        df.drop_duplicates(inplace=True)
-        df.sort_index(inplace=True)
+        df = self._get_dataframe_from_raw_data()
+        
+        # Remove observations outside of the range
+        est_datetimes = pd.DatetimeIndex(df.date).to_pydatetime()        
+        if self.get_start_tws() is not None and self.get_end_tws() is not None:
+            start_time = self.get_start_tws().replace(tzinfo=None)
+            end_time = self.get_end_tws().replace(tzinfo=None)
+            df = df.iloc[(start_time <= est_datetimes) & (est_datetimes <= end_time)]
+        
+        # Add an EST timestamp index
+        est_timestamps = [dt.timestamp() for dt in est_datetimes]
+        df.index = pd.Index(est_timestamps, name='est_timestamp')
         return df
     
     def is_valid_request(self):
@@ -341,31 +356,130 @@ class HistoricalDataRequest(AbstractDataRequest):
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
             self.parent_app.cancelHistoricalData(req_id)
-            
+
+    def _get_period_end(self, _start, _delta):
+        if _delta.total_seconds() >= (3600 * 24):
+            # For daily frequency, TWS defines the days to begin and end at 18:00
+            if _start.hour < 18:
+                new_date = datetime.datetime.combine(_start.date(), datetime.time(18,0))
+            else:
+                next_date = _start.date() + _delta
+                new_date = datetime.datetime.combine(next_date, datetime.time(18,0))
+            # Keep the previous time zone information
+            return _start.tzinfo.localize(new_date)
+        else:
+            return _start + _delta
+
+    def _is_duration_daily_frequency_or_lower(self, _delta):
+        th = helper.TimeHelper.from_timedelta(_delta)
+        dur = helper.TimeHelper(th.get_min_tws_duration(), 'duration')
+        return dur.total_seconds() / dur.n >= 24 * 3600
+        
     def _split_into_valid_periods(self, start_tws, end_tws):
         bar_freq = helper.TimeHelper(self.frequency, time_type='frequency')
         delta = end_tws - start_tws
+
+        if bar_freq.units == 'days':
+            # TWS convention seems to be that days begin and end at 18:00 EST
+            start_tws = datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1), datetime.time(18,0))
+            end_tws = datetime.datetime.combine(end_tws.date(), datetime.time(18,0))
+
         assert delta.total_seconds() > 0, 'Start time must precede end time.'
         max_delta = bar_freq.get_max_tws_duration_timedelta()
-        if max_delta < delta:
-            period_start = start_tws
-            periods = []
-            while period_start + max_delta < end_tws:
-                period_end = min(end_tws, period_start + max_delta)
-                periods.append((period_start, period_end))
-                period_start = period_end
-            if period_start < end_tws:
-                periods.append((period_start, end_tws))
-            return periods
+        period_start = start_tws
+        periods = []
+        while self._get_period_end(period_start, max_delta) < end_tws:
+            period_end = min(end_tws, self._get_period_end(period_start, max_delta))
+            periods.append((period_start, period_end))
+            period_start = period_end
+        if period_start < end_tws:
+            periods.append((period_start, end_tws))
+        return periods
+            
+    def _get_dataframe_from_raw_data(self):
+        """ Turn the requested data into a dataframe.
+        """
+        df = pd.DataFrame()
+        for d in self.get_data():
+            df = pd.concat([df, pd.DataFrame(d)])
+
+        df.sort_values('date', inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        df.drop_duplicates(inplace=True)
+
+        if self.data_type in ['BID', 'ASK']:
+            df = df.drop(['average', 'barCount', 'volume'], axis=1)
+
+            idx = np.zeros((df.shape[0],), dtype=bool)
+            idx[0] = True
+            vals = df.drop('date', axis=1).to_numpy()
+            # Only keep rows where something has changed
+            idx[1:] = np.any(vals[1:] != vals[:-1], axis=1)
+        elif self.data_type == 'TRADES':
+            idx = np.zeros((df.shape[0],), dtype=bool)
+            idx[0] = True
+            # Only keep rows with a non-zero volume (e.g., a trade occurred in this bar)
+            idx[1:] = (df.volume.values[1:] != 0)
         else:
-            return [(start_tws, end_tws)]
+            raise NotImplementedError('Not implemented for data type {}'.format(self.data_type))
+        return df[idx]
     
+
+class StreamingBarRequest(AbstractDataRequest):
+    def __init__(self, parent_app, contract, is_snapshot, data_type="TRADES", use_rth=DEFAULT_USE_RTH, frequency='5s'):
+        super().__init__(parent_app, contract, is_snapshot)
+        self.frequency = frequency        
+        self.data_type = data_type
+        self.use_rth = use_rth
+
+    # abstractmethod
+    def initialize_data(self):
+        self.__market_data = []
+
+    # abstractmethod
+    def append_data(self, new_data):
+        self.__market_data.append(new_data)
+        
+    # abstractmethod                
+    def _request_data(self, req_id):
+        self.parent_app.reqRealTimeBars(
+                                           req_id,
+                                           contract=self.contract,
+                                           barSize=self.barSizeInSeconds(),
+                                           whatToShow=self.data_type, 
+                                           useRTH=self.use_rth,
+                                           realTimeBarsOptions=[]
+                                        )
+        
+    # abstractmethod
+    def get_data(self):
+        assert len(self.get_req_ids()) == 1, 'Streaming Tick Data Requests should not have to be split.'
+        return self.__market_data
+
+    def get_dataframe(self):
+        cols = ['time', 'price', 'size']
+        prices = [{c: d[c] for c in cols} for d in self.get_data()]
+        df = pd.DataFrame.from_dict(prices)
+        df.rename({'time': 'local_time'}, inplace=True)
+        df.set_index('local_time', inplace=True)
+        return df
+        
+    def barSizeInSeconds(self):
+        if self.frequency:
+            return int(helper.TimeHelper(self.frequency, time_type='frequency').total_seconds())
+        else:
+            return -1
+        
+    def _cancelStreamingSubscription(self):
+        for req_id in self.get_req_ids():
+            self.parent_app.cancelRealTimeBars(req_id)
+
 
 class StreamingTickDataRequest(AbstractDataRequest):
     def __init__(self, parent_app, contract, is_snapshot, data_type="Last", 
-                                     number_of_ticks=1000, ignore_size=True):
+                                     number_of_ticks=0, ignore_size=True):
         super().__init__(parent_app, contract, is_snapshot)
-        self.tickType = data_type,
+        self.tickType = data_type
         self.numberOfTicks = number_of_ticks  
         self.ignoreSize = ignore_size     # Ignore ticks with just size updates (no price chg.)
 
@@ -382,8 +496,8 @@ class StreamingTickDataRequest(AbstractDataRequest):
         self.parent_app.reqTickByTickData(
                                            req_id,
                                            contract=self.contract,
+                                           tickType=self.tickType,            
                                            numberOfTicks=self.numberOfTicks,
-                                           tickType=self.tickType, 
                                            ignoreSize=self.ignoreSize
                                         )
         
@@ -392,13 +506,20 @@ class StreamingTickDataRequest(AbstractDataRequest):
         assert len(self.get_req_ids()) == 1, 'Streaming Tick Data Requests should not have to be split.'
         return self.__market_data
         
+    def get_dataframe(self):        
+        cols = ['time', 'price', 'size']
+        prices = [{c: d[c] for c in cols} for d in self.get_data()]
+        df = pd.DataFrame.from_dict(prices)
+        df.set_index('time', inplace=True)
+        return df
+
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
             self.parent_app.cancelTickByTickData(req_id)
             
     
 class HistoricalTickDataRequest(AbstractDataRequest):
-    def __init__(self, parent_app, contract, is_snapshot, start="", end="", use_rth=True,
+    def __init__(self, parent_app, contract, is_snapshot, start="", end="", use_rth=DEFAULT_USE_RTH,
                                  data_type="Last", number_of_ticks=1000, ignore_size=True):
         super().__init__(parent_app, contract, is_snapshot)
         self.startDateTime = start
@@ -441,7 +562,7 @@ class HistoricalTickDataRequest(AbstractDataRequest):
 
     
 class HeadTimeStampDataRequest(AbstractDataRequest):
-    def __init__(self, parent_app, contract, is_snapshot=True, data_type='TRADES', use_rth=None):
+    def __init__(self, parent_app, contract, is_snapshot=True, data_type='TRADES', use_rth=DEFAULT_USE_RTH):
         self.use_rth = use_rth               # True/False - only return regular trading hours
         self.data_type = data_type           # TRADES, ASK, BID, ASK_BID, etc.
         super().__init__(parent_app, contract, is_snapshot)
@@ -471,32 +592,45 @@ class HeadTimeStampDataRequest(AbstractDataRequest):
         
 
 class PacingViolationManager(object):
-    TOTAL_REQUESTS_PER_TIME_UNIT = (60, 600)
-    CONTRACT_REQUESTS_PER_TIME_UNIT = (6, 2)
+    """ Manage how many market data requests for small bars (30 seconds or less, including ticks)
+            can be submitted in order to avoid pacing violations from TWS.
+    """
     
-    _market_data_requests = collections.deque(maxlen=TOTAL_REQUESTS_PER_TIME_UNIT[0])
+    TOTAL_REQUESTS_PER_TIME_UNIT = (60, 600)   # (number of requests allowed, time unit in seconds) 
+    CONTRACT_REQUESTS_PER_TIME_UNIT = (6, 2)   # (number of requests allowed, time unit in seconds)
+    SMALL_BAR_CUTOFF_SIZE = 30                 # In seconds
+    
+    _small_bar_market_data_requests = collections.deque(maxlen=TOTAL_REQUESTS_PER_TIME_UNIT[0])
     
     def __init__(self):
         super().__init__()
 
     def manage_request(self, requestObj):
-        time.sleep(0.2)
-        self.update_queue()
-        self.check_requests_on_same_contract(requestObj)
-        self.ensure_total_requests_not_exceeded()
-        self._market_data_requests.appendleft((time.time(), requestObj))
+        """ Manage the processing of the request to avoid pacing violations.
+            For small bar requests, it might be necessary to sleep before continuing.
+            """
+        time.sleep(0.2)  # Always sleep for 0.2 seconds between requests to avoid overloading the server
+        if self._is_small_bar_data_request(requestObj):
+            # Only manage the request further if it is a 'small bar' (30 seconds or less)
+            self.update_queue()
+            self.check_requests_on_same_contract(requestObj)
+            self.ensure_total_requests_not_exceeded()
+            self._small_bar_market_data_requests.appendleft((time.time(), requestObj))
+            if requestObj.data_type == 'BID_ASK':
+                # BID_ASK requests count 2x, so we add an extra copy of the request to the queue
+                self._small_bar_market_data_requests.appendleft((time.time(), requestObj))            
 
     def update_queue(self):
-        while self. _market_data_requests and \
-        time.time() - self._market_data_requests[-1][0] > self.TOTAL_REQUESTS_PER_TIME_UNIT[1]:
-            self._market_data_requests.pop()
+        while self. _small_bar_market_data_requests and \
+        time.time() - self._small_bar_market_data_requests[-1][0] > self.TOTAL_REQUESTS_PER_TIME_UNIT[1]:
+            self._small_bar_market_data_requests.pop()
 
     def check_requests_on_same_contract(self, requestObj):
         # Space out requests 
         N, T = self.CONTRACT_REQUESTS_PER_TIME_UNIT
         count = 0
         if 'data_type' in requestObj.__dict__:
-            for past_request in self._market_data_requests:
+            for past_request in self._small_bar_market_data_requests:
                 t_past, reqObj_past = past_request
                 if time.time() - t_past > T:
                     break
@@ -514,15 +648,19 @@ class PacingViolationManager(object):
                 
     def ensure_total_requests_not_exceeded(self):
         N, T = self.TOTAL_REQUESTS_PER_TIME_UNIT        
-        if N == len(self._market_data_requests):
-            dt = (time.time() - self._market_data_requests[-1][0])
+        if N == len(self._small_bar_market_data_requests):
+            dt = (time.time() - self._small_bar_market_data_requests[-1][0])
             if dt < T:
                 t_sleep = T - dt + 0.1
                 print('Sleeping {} seconds to avoid pacing violation on total requests.'.format(t_sleep))
                 time.sleep(t_sleep)
                 
     def clear_queue(self):
-        self._market_data_requests = collections.deque(maxlen=self.TOTAL_REQUESTS_PER_TIME_UNIT[0])
+        self._small_bar_market_data_requests = collections.deque(maxlen=self.TOTAL_REQUESTS_PER_TIME_UNIT[0])
+        
+    def _is_small_bar_data_request(self, reqObj):
+        return isinstance(reqObj, HistoricalDataRequest) and \
+               self.SMALL_BAR_CUTOFF_SIZE >= helper.TimeHelper(reqObj.frequency, 'frequency').total_seconds()
         
         
 class MarketDataApp(BaseApp):
@@ -568,11 +706,17 @@ class MarketDataApp(BaseApp):
         _kwargs = dict(fields=fields)
         return self._create_data_request(*_args, **_kwargs)
     
-    def create_historical_data_request(self, contractList, is_snapshot, frequency, use_rth=True, 
+    def create_historical_data_request(self, contractList, is_snapshot, frequency, use_rth=DEFAULT_USE_RTH, 
                                         data_type="TRADES", start="", end="", duration=""):
         _args = [HistoricalDataRequest, contractList, is_snapshot]        
         _kwargs = dict(frequency=frequency, start=start, end=end, duration=duration,
                                                 use_rth=use_rth, data_type=data_type)
+        return self._create_data_request(*_args, **_kwargs)
+    
+    def create_streaming_bar_data_request(self, contractList, frequency='5s', use_rth=DEFAULT_USE_RTH, data_type="TRADES"):
+        is_snapshot = False        
+        _args = [StreamingBarRequest, contractList, is_snapshot]        
+        _kwargs = dict(frequency=frequency, use_rth=use_rth, data_type=data_type)
         return self._create_data_request(*_args, **_kwargs)    
     
     def create_streaming_tick_data_request(self, contractList, data_type="Last",
@@ -582,7 +726,7 @@ class MarketDataApp(BaseApp):
         _kwargs = dict(data_type=data_type, number_of_ticks=number_of_ticks, ignore_size=ignore_size)
         return self._create_data_request(*_args, **_kwargs)
     
-    def create_historical_tick_data_request(self, contractList, use_rth=True, data_type="Last", 
+    def create_historical_tick_data_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type="Last", 
                                        start="", end="", number_of_ticks=1000):
         is_snapshot = True
         _args = [HistoricalTickDataRequest, contractList, is_snapshot]        
@@ -590,7 +734,7 @@ class MarketDataApp(BaseApp):
                                                 number_of_ticks=number_of_ticks)
         return self._create_data_request(*_args, **_kwargs)
 
-    def create_first_date_request(self, contractList, use_rth=True, data_type='TRADES'):
+    def create_first_date_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
         is_snapshot = True
         _args = [HeadTimeStampDataRequest, contractList, is_snapshot]        
         _kwargs = dict(use_rth=use_rth, data_type=data_type)
@@ -655,6 +799,10 @@ class MarketDataApp(BaseApp):
     def historicalDataEnd(self, reqId: int, start: str, end: str):
         super().historicalDataEnd(reqId, start, end)
         self._handle_callback_end(reqId)
+
+    def realtimeBar(self, reqId, date, _open, high, low, close, volume, WAP, count):
+        super().realtimeBar(reqId, date, _open, high, low, close, volume, WAP, count)
+        self._handle_realtimeBar_callback(reqId, date, _open, high, low, close, volume, WAP, count)
         
     def historicalTicks(self, reqId: int, ticks, done: bool):
         self._handle_historical_tick_data_callback(reqId, ticks, done)
@@ -665,19 +813,19 @@ class MarketDataApp(BaseApp):
     def historicalTicksLast(self, reqId: int, ticks, done: bool):
         self._handle_historical_tick_data_callback(reqId, ticks, done)
         
-    def tickByTickAllLast(self, reqId, tickType, time, price, size, 
+    def tickByTickAllLast(self, reqId, tickType, _time, price, size, 
                           tickAttribLast, exchange, specialConditions):
         self._handle_tickByTickAllLast_callback(reqId, tickType, 
-               time, price, size, tickAttribLast, exchange, specialConditions)
+               _time, price, size, tickAttribLast, exchange, specialConditions)
 
-    def tickByTickBidAsk(self, reqId, time, bidPrice, askPrice, 
+    def tickByTickBidAsk(self, reqId, _time, bidPrice, askPrice, 
                                          bidSize, askSize, tickAttribBidAsk):
-        self._handle_tickByTickBidAsk_callback(reqId, time, bidPrice, askPrice,
+        self._handle_tickByTickBidAsk_callback(reqId, _time, bidPrice, askPrice,
                                          bidSize, askSize, tickAttribBidAsk)
         
-    def tickByTickMidPoint(self, reqId, time, midPoint):
-        self._handle_tickByTickMidPoint_callback(reqId, time, midPoint)
-        
+    def tickByTickMidPoint(self, reqId, _time, midPoint):
+        self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
+                
     def headTimestamp(self, reqId: int, timestamp: str):
         self._handle_headtimestamp_data_callback(reqId, timestamp)
         self._handle_callback_end(reqId)
@@ -710,7 +858,21 @@ class MarketDataApp(BaseApp):
     
     def _handle_historical_data_callback(self, req_id, bar, is_update):
         reqObj = self._get_request_object_from_id(req_id)
-        reqObj.append_data(bar.__dict__)
+        data = bar.__dict__
+        if is_update:
+            if MONITOR_LATENCY:
+                data['time_received'] = datetime.datetime.now()
+            reqObj.update_data(data)
+        else:
+            reqObj.append_data(data)
+        
+    def _handle_realtimeBar_callback(self, req_id, date, _open, high, low, close, volume, WAP, count):
+        reqObj = self._get_request_object_from_id(req_id)        
+        bar = dict(date=date, open=_open, high=high, low=low, close=close, volume=volume,
+                   average=WAP, barCount=count)
+        if MONITOR_LATENCY:
+            bar['latency'] = datetime.datetime.now().timestamp() - date
+        reqObj.append_data(bar)
         
     def _handle_historical_tick_data_callback(self, req_id, ticks, done):
         reqObj = self._get_request_object_from_id(req_id)
@@ -718,23 +880,29 @@ class MarketDataApp(BaseApp):
         if done:
             self.register_request_complete(req_id)
 
-    def _handle_tickByTickAllLast_callback(self, req_id, tickType, 
-               time, price, size, tickAttribLast, exchange, specialConditions):
+    def _handle_tickByTickAllLast_callback(self, req_id, tickType, _time, 
+                                           price, size, tickAttribLast, exchange, specialConditions):
         reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=time, price=price, size=size, tickAttribLast=tickAttribLast, 
-                                exchange=exchange, specialConditions=specialConditions)
+        data = dict(time=_time, price=price, size=size, tickAttribLast=tickAttribLast, 
+                    exchange=exchange, specialConditions=specialConditions)
+        if MONITOR_LATENCY:
+            data['latency'] = datetime.datetime.now().timestamp() - _time
         reqObj.append_data(data)
         
-    def _handle_tickByTickBidAsk_callback(self, req_id, time, bidPrice, askPrice,
-                                         bidSize, askSize, tickAttribBidAsk):
+    def _handle_tickByTickBidAsk_callback(self, req_id, _time, bidPrice, askPrice,
+                                          bidSize, askSize, tickAttribBidAsk):
         reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=time, bidPrice=biedPrice, askPrice=askPrice, bidSize=bidSize, 
-                                   askSize=askSize, tickAttribBidAsk=tickAttribBidAsk)
+        data = dict(time=_time, bidPrice=biedPrice, askPrice=askPrice, bidSize=bidSize, 
+                    askSize=askSize, tickAttribBidAsk=tickAttribBidAsk)
+        if MONITOR_LATENCY:
+            data['latency'] = datetime.datetime.now().timestamp() - _time
         reqObj.append_data(data)
         
-    def _handle_tickByTickMidPoint_callback(self, req_id, time, midPoint):
+    def _handle_tickByTickMidPoint_callback(self, req_id, _time, midPoint):
         reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=time, midPoint=midPoint)
+        data = dict(time=_time, midPoint=midPoint)
+        if MONITOR_LATENCY:
+            data['latency'] = datetime.datetime.now().timestamp() - _time
         reqObj.append_data(data)
         
     def _handle_headtimestamp_data_callback(self, req_id, timestamp):
