@@ -18,7 +18,6 @@ import time
 import pytz
 import numpy as np
 import pandas as pd
-import threading
 import pickle
 import copy
 import collections
@@ -29,10 +28,8 @@ from ibapi.contract import Contract
 from ibapi.ticktype import TickTypeEnum
 from ibapi.common import BarData, HistogramDataList, TickerId, TickAttrib
 
-from base import BaseApp
+import base
 import helper
-
-__CLIENT_ID = 1              # Reserve client id 0 for the main application
 
 # The timezone specified at login to TWS. All historical data refer to this timezone.
 TWS_TIMEZONE = 'US/Eastern'
@@ -663,7 +660,7 @@ class PacingViolationManager(object):
                self.SMALL_BAR_CUTOFF_SIZE >= helper.TimeHelper(reqObj.frequency, 'frequency').total_seconds()
         
         
-class MarketDataApp(BaseApp):
+class MarketDataApp(base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
 
@@ -911,38 +908,17 @@ class MarketDataApp(BaseApp):
         
         
 # Declare global variables used to handle the creation of a singleton class
-__app = __port = __api_thread = None
+__apps = dict()
+__ports = dict()
+__api_threads = dict()        
 
-def get_instance(port=7497):
+def get_instance(port, clientId=None):
     """Entry point into the program.
 
     Arguments:
     port (int): Port number that IBGateway, or TWS is listening.
     """
-    global __app, __port, __api_thread
-    if isinstance(__app, BaseApp) and __app.isConnected():
-        if __port is None:
-            return ValueError('Port information has been losw. Something has gone wrong.')
-        elif __port != port:
-            raise ValueError('Application is already open on another port.')
-        else:
-            # The connection is already open
-            return __app
-    else:
-        try:
-            __app = MarketDataApp()
-            __app.connect("127.0.0.1", port=port, clientId=__CLIENT_ID)
-            print("serverVersion:%s connectionTime:%s" % (__app.serverVersion(),
-                                                          __app.twsConnectionTime()))
-            __api_thread = threading.Thread(target=__app.run)
-            __api_thread.start()
-            
-            print('MarketDataApp connecting to IB...')
-            while __app.req_id() is None:
-                time.sleep(0.2)
-            print('MarketDataApp connected.')
-            
-            __port = port
-            return __app
-        except KeyboardInterrupt:
-            pass
+    global __apps, __ports, __api_threads
+    _kwargs = dict()
+    return base._get_instance(MarketDataApp, port=port, clientId=clientId,\
+                         global_apps=__apps, global_ports=__ports, global_threads=__api_threads)
