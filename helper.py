@@ -3,11 +3,8 @@ import pytz
 import re
 import math
 
-TIMEZONE_EST = 'US/Eastern'
-TIMEZONE_CET = 'Europe/Zurich'
-TIMEZONE_UTC = 'UTC'
-TIMEZONE_LOC = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo            
-    
+import constants    
+
 
 def convert_tws_date_to_datetime(d, tz_name=None):
     """Extract datetime information from IB's date format."""
@@ -31,7 +28,7 @@ def convert_datetime_to_tws_date(d, tws_tz_name=None):
         dt = d
     return datetime.datetime.strftime(dt, '%Y%m%d %H:%M:%S')
 
-def convert_utc_timestamp_to_datetime(tmstmp, tz_name=TIMEZONE_UTC):
+def convert_utc_timestamp_to_datetime(tmstmp, tz_name=constants.TIMEZONE_UTC):
     tzone = pytz.timezone(tz_name)
     dt_utc = pytz.utc.localize(datetime.datetime.utcfromtimestamp(tmstmp))    
     return dt_utc.astimezone(tzone)

@@ -29,10 +29,9 @@ from ibapi.ticktype import TickTypeEnum
 from ibapi.common import BarData, HistogramDataList, TickerId, TickAttrib
 
 import base
+import constants
 import helper
 
-# The timezone specified at login to TWS. All historical data refer to this timezone.
-TWS_TIMEZONE = 'US/Eastern'
 
 # Status flags
 _STATUS_NEW = 0
@@ -47,6 +46,7 @@ DEFAULT_USE_RTH = False
 
 # Activate latency monitoring for tests of streaming data
 MONITOR_LATENCY = False
+
 
 class DataRequestError(Exception):
     """Exceptions generated during requesting historical market data.
@@ -272,7 +272,7 @@ class HistoricalDataRequest(AbstractDataRequest):
             est_datetimes = est_datetimes[rows_to_keep]
         
         # Add a UTC timestamp index
-        est_tz = pytz.timezone(helper.TIMEZONE_EST)
+        est_tz = pytz.timezone(constants.TIMEZONE_EST)
         utc_tz = pytz.utc
         utc_datetimes = [est_tz.localize(d).astimezone(utc_tz) for d in est_datetimes]
         utc_timestamps = [d.timestamp() for d in utc_datetimes]
@@ -313,8 +313,8 @@ class HistoricalDataRequest(AbstractDataRequest):
                         requestObj = self.copy()
                         requestObj.reset_attributes()
                         requestObj.set_subrequests([requestObj])
-                        requestObj.start = helper.convert_datetime_to_tws_date(period_start, TWS_TIMEZONE)
-                        requestObj.end = helper.convert_datetime_to_tws_date(period_end, TWS_TIMEZONE)
+                        requestObj.start = helper.convert_datetime_to_tws_date(period_start, constants.TWS_TIMEZONE)
+                        requestObj.end = helper.convert_datetime_to_tws_date(period_end, constants.TWS_TIMEZONE)
                         requestObj.duration = ""
                         requestObjList.append(requestObj)
                     return requestObjList
@@ -343,17 +343,17 @@ class HistoricalDataRequest(AbstractDataRequest):
 
     def get_start_tws(self):
         if self.start:
-            return helper.convert_tws_date_to_datetime(self.start, TWS_TIMEZONE)
+            return helper.convert_tws_date_to_datetime(self.start, constants.TWS_TIMEZONE)
         else:
             return None
             
     def get_end_tws(self):
         if not self.end:
             end_utc = pytz.utc.localize(datetime.datetime.utcnow())
-            tws_tzone = pytz.timezone(TWS_TIMEZONE)
+            tws_tzone = pytz.timezone(constants.TWS_TIMEZONE)
             return end_utc.astimezone(tws_tzone)
         else:
-            return helper.convert_tws_date_to_datetime(self.end, TWS_TIMEZONE)
+            return helper.convert_tws_date_to_datetime(self.end, constants.TWS_TIMEZONE)
         
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -383,7 +383,7 @@ class HistoricalDataRequest(AbstractDataRequest):
 
         if bar_freq.units == 'days':
             # TWS convention seems to be that days begin and end at 18:00 EST
-            tz_info = pytz.timezone(TWS_TIMEZONE)
+            tz_info = pytz.timezone(constants.TWS_TIMEZONE)
             start_tws = datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1), 
                                                   datetime.time(18,0), tzinfo=tz_info)
             assert False            

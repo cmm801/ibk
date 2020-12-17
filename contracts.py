@@ -13,7 +13,7 @@ Classes
         of the methods are over-rides of the IBWrapper commands to customize
         the functionality.
 """
-
+import os
 import time
 import json
 import datetime
@@ -21,9 +21,15 @@ import datetime
 import ibapi
 import base
 import helper
+import constants
+
 
 __CLIENT_ID = 127
 MAX_WAIT_TIME = 10  # time in seconds. Large requests are slow
+
+# Declare the path to the file containing saved contract information
+FILENAME_CONTRACTS = os.path.join(constants.IB_PATH, 'contract_file.json')
+
 
 class ContractsApp(base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
@@ -42,7 +48,7 @@ class ContractsApp(base.BaseApp):
         self.__market_rule_info = dict()
         
         # Load the saved contracts
-        self._load_contracts('contract_file.json')
+        self._load_contracts(FILENAME_CONTRACTS)
         
     def get_contract_details(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
         """Find all matching contracts given a partial contract.
@@ -197,15 +203,16 @@ class ContractsApp(base.BaseApp):
             else:
                 raise NotImplemtedError( 'Currently only supported for USD stocks.' )
 
-    def _filter_contracts(self, contract_list, target_contract, filter_type='third_friday'):
-        """Filter a list of contracts by a particular condition."""
+    def _filter_derivative_contracts(self, contract_list, target_contract, filter_type='third_friday'):
+        """Filter a list of contracts by a particular condition.
+        """
         if 'third_friday' == filter_type:
             expiry_string = target_contract.lastTradeDateOrContractMonth
             if len(expiry_string) == 6:
                 # Get the expiration year/month from the expiry string
-                expiry_ym = datetime.datetime.strptime('202004', "%Y%m")
+                expiry_ym = datetime.datetime.strptime(expiry_string, "%Y%m")
                 third_friday = helper.get_third_friday(expiry_ym.year, expiry_ym.month)
-                expiry_date = datetime.datetime.strftime( third_friday, '%Y%m%d')
+                expiry_date = datetime.datetime.strftime(third_friday, '%Y%m%d')
             elif len(expiry_string) == 8:
                 expiry_date = expiry_string
             else:
@@ -216,7 +223,7 @@ class ContractsApp(base.BaseApp):
         
     def _select_futures_contract(self, target_contract, contract_details):
         """Select the desired futures contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(contract_details, 
+        matching_contracts = self._filter_derivative_contracts(contract_details, 
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
@@ -227,7 +234,7 @@ class ContractsApp(base.BaseApp):
         
     def _select_options_contract(self, target_contract, contract_details):
         """Select the desired options contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(contract_details, 
+        matching_contracts = self._filter_derivative_contracts(contract_details, 
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
@@ -308,6 +315,7 @@ class ContractsApp(base.BaseApp):
                         if key != 'conId':
                             ct.__setattr__(key, val)
         except FileNotFoundError:
+            print('file not found')
             pass
 
     def _get_contract_from_dict(self, info):
