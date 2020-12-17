@@ -66,13 +66,13 @@ class IBWrapper(wrapper.EWrapper):
     def __init__(self):
         wrapper.EWrapper.__init__(self)
 
-        
+
 class ConnectionNotEstablishedError(Exception):
     """ Exception for handling case when connection could not be established to IB server."""
     def __init__(self, message):
         # Call the base class constructor with the parameters it needs
         super(ConnectionNotEstablishedError, self).__init__(message)
-        
+
 
 class BaseApp(IBWrapper, IBClient):
     """Main program class. The TWS calls nextValidId after connection, so
@@ -81,7 +81,7 @@ class BaseApp(IBWrapper, IBClient):
     def __init__(self):
         IBWrapper.__init__(self)
         IBClient.__init__(self, app_wrapper=self)
-        self.__req_id = None        
+        self.__req_id = None
 
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
@@ -103,16 +103,16 @@ class BaseApp(IBWrapper, IBClient):
         super().nextValidId(reqId)
         self.__req_id = reqId
         return self
-    
+
     def keyboardInterrupt(self):
         """Stop exectution.
         """
-        pass 
+        pass
 
     def req_id(self):
         """Retrieve the current request id."""
         return self.__req_id
-    
+
     def _get_next_req_id(self):
         """Retrieve the current class variable req_id and increment
         it by one.
@@ -122,9 +122,9 @@ class BaseApp(IBWrapper, IBClient):
         current_req_id = self.__req_id
         self.__req_id += 1
         return current_req_id
-    
+
 def _find_existing_app_instance(class_handle, port, clientId, global_apps, global_ports):
-    """ Find an application that has already been created. 
+    """ Find an application that has already been created.
         If a clientId is not provided, then find an application of the same type.
     """
     if not global_apps:
@@ -144,10 +144,10 @@ def _find_existing_app_instance(class_handle, port, clientId, global_apps, globa
                 return global_apps[cid]
         # If we get here, then no application was found with matching type and port
         return None
-    
+
 def _connect_and_check(class_handle, port, clientId):
     """Attempt to connect an application. Return None if no connection is established."""
-    app = class_handle()    
+    app = class_handle()
     app.connect("127.0.0.1", port=port, clientId=clientId)
     _thread = threading.Thread(target=app.run)
     _thread.start()
@@ -159,7 +159,7 @@ def _connect_and_check(class_handle, port, clientId):
         return app, _thread
     else:
         return None, None
-        
+
 def _get_instance(class_handle, port, clientId=None, global_apps=None, global_ports=None, global_threads=None):
     """Entry point into the program.
 
@@ -168,7 +168,7 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
     """
     # Retrieve application if one already exists with these specs
     app = _find_existing_app_instance(class_handle, port=port, clientId=clientId, \
-                                     global_apps=global_apps, global_ports=global_ports)    
+                                     global_apps=global_apps, global_ports=global_ports)
     if app is not None:
         return app
     else:
@@ -177,13 +177,13 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
             # A specific client Id has been requested
             app, _thread = _connect_and_check(class_handle, port, clientId)
         else:
-            # No specific client Id has been requested, so we try 
+            # No specific client Id has been requested, so we try
             #     different client Ids until we find one that works
             cid = j = 1
             n_iters = 10
             print('Attempting to connect with unused clientId...'.format(cid))
             while (app is None or not app.isConnected()) and j <= n_iters:
-                while cid in global_apps.keys(): 
+                while cid in global_apps.keys():
                     cid += 1
 
                 try:
@@ -192,7 +192,7 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
                     cid += 1
                     j += 1
                 else:
-                    cid += 1                    
+                    cid += 1
                     j += 1
 
         if app is None or not app.isConnected():
@@ -208,4 +208,4 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
                         app.serverVersion(), app.twsConnectionTime(), app.clientId))
             print('MarketDataApp connecting to IB...')
             return app
-    
+

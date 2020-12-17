@@ -46,7 +46,7 @@ class OrdersApp(base.BaseApp):
     def _get_next_order_id(self):
         """Overload the Base class method to get order ID (the same as the request ID)."""
         return self._get_next_req_id()
-    
+
     def get_saved_orders(self, localSymbol=None):
         """Return saved orders for localSymbol. If localSymbol is None
         return all saved orders.
@@ -88,19 +88,19 @@ class OrdersApp(base.BaseApp):
         self.__open_orders = []
         self._open_order_request_complete = False
         self.reqOpenOrders()
-        
+
         start_time = time.time()
         while not self._open_order_request_complete and time.time() - start_time < max_wait_time:
             time.sleep(0.1)
 
         return self.__open_orders
-    
+
     def _append_order(self, _order):
         self.__open_orders.append(_order)
-    
+
     def _update_saved_orders(self, _order):
-        self.__saved_orders.update(_order)        
-        
+        self.__saved_orders.update(_order)
+
     def create_simple_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
 
@@ -127,18 +127,18 @@ class OrdersApp(base.BaseApp):
             _order.outsideRth = req_order['outside_rth']
             _order.tif = req_order['tif']
             _order.transmit = transmit
-            
+
             new_orders[order_id] = {
-                "order": _order, 
+                "order": _order,
                 "contract": req_order['contract'],
             }
 
             self._update_saved_orders(new_orders)
             return new_orders
-        
+
     def create_bracket_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
-           NOTE: to get TWS to execute these orders properly, we must have the 
+           NOTE: to get TWS to execute these orders properly, we must have the
                 first two orders with transmit=False, and then when the last order
                 goes to TWS, it uses the 'transmit' flag on this last order to properly
                 handle the order group.
@@ -168,9 +168,9 @@ class OrdersApp(base.BaseApp):
             parent.outsideRth = req_order['outside_rth']
             parent.tif = req_order['tif']
             parent.transmit = False
-            
+
             new_orders[order_id] = {
-                "order": parent, 
+                "order": parent,
                 "contract": req_order['contract'],
             }
 
@@ -186,9 +186,9 @@ class OrdersApp(base.BaseApp):
                 profit_taker.lmtPrice = req_order['profit_price']
                 profit_taker.parentId = parent.orderId
                 profit_taker.transmit = False
-                
+
                 new_orders[order_id] = {
-                    "order": profit_taker, 
+                    "order": profit_taker,
                     "contract": req_order['contract'],
                 }
 
@@ -204,9 +204,9 @@ class OrdersApp(base.BaseApp):
                 stop_loss.totalQuantity = req_order['quantity']
                 stop_loss.parentId = parent.orderId
                 stop_loss.transmit = transmit
-                
+
                 new_orders[order_id] = {
-                    "order": stop_loss, 
+                    "order": stop_loss,
                     "contract": req_order['contract'],
                 }
             self._update_saved_orders(new_orders)
@@ -245,12 +245,12 @@ class OrdersApp(base.BaseApp):
             order.tif = req_order['tif']
             order.transmit = transmit
             # TODO parent_id
-            
+
             new_orders[order_id] = {
-                "order": order, 
+                "order": order,
                 "contract": req_order['contract'],
             }
-            
+
             self._update_saved_orders(new_orders)
             return new_orders
 
@@ -282,7 +282,7 @@ class OrdersApp(base.BaseApp):
             order.outsideRth = req_order['outside_rth']
             order.tif = req_order['tif']
             order.transmit = transmit
-            
+
             new_orders[order_id] = {
                 "order": order,
                 "contract": req_order['contract'],
@@ -300,12 +300,12 @@ class OrdersApp(base.BaseApp):
                 profit_taker.lmtPrice = req_order['profit_price']
                 profit_taker.parentId = order.orderId
                 profit_taker.transmit = transmit
-                
+
                 new_orders[profit_taker_order_id] = {
-                    "order": profit_taker, 
+                    "order": profit_taker,
                     "contract": req_order['contract']
                 }
-                
+
             self._update_saved_orders(new_orders)
             return new_orders
 
@@ -349,12 +349,12 @@ class OrdersApp(base.BaseApp):
             order.stockRangeLower = req_order['ref_lower_price']
             order.stockRangeUpper = req_order['ref_upper_price']
             order.transmit = transmit
-            
+
             new_orders[order_id] = {
                 "order": order,
                 "contract": req_order['contract'],
             }
-            
+
             self._update_saved_orders(new_orders)
             return new_orders
 
@@ -410,7 +410,7 @@ class OrdersApp(base.BaseApp):
             'profit_price': profit_price,
             'stop_price': None
         }
-        
+
         self.create_bracket_orders(req_orders=[req_order], transmit=transmit)
         for order_id in list(self.get_saved_orders(symbol).keys()):
             self.place_order(order_id=order_id)
@@ -426,16 +426,16 @@ class OrdersApp(base.BaseApp):
                             'contract': contract,
                             'order': order
                           })
-        
+
     def openOrderEnd(self):
         super().openOrderEnd()
         self._open_order_request_complete = True
 
-        
+
 # Declare global variables used to handle the creation of a singleton class
 __apps = dict()
 __ports = dict()
-__api_threads = dict()        
+__api_threads = dict()
 
 def get_instance(port, clientId=None):
     """Entry point into the program.

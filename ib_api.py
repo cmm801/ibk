@@ -113,24 +113,24 @@ class IBApp(IBWrapper, IBClient):
         IBClient.__init__(self, app_wrapper=self)
 
         self.order_id = None
-        self.req_id = None        
+        self.req_id = None
         self.saved_partial_contracts = dict()
-        self.saved_contracts = dict()        
+        self.saved_contracts = dict()
         self.positions = []
         self._contract_details = {}
         self._saved_orders = {}
         self._open_orders = []
-        
+
         self._historical_data = dict()
         self._historical_data_req_end = dict()
         self._histogram = None
-        
+
         # Keep track of request IDs and human-readable names/ids
         self._req_ids_to_string_ids = dict()
         self._string_ids_to_req_ids = dict()
-        
+
         self._load_contracts('contract_file.json')
-        
+
         # Subscribe to market data streaming snapshots
         self._market_data = dict()
 
@@ -147,31 +147,31 @@ class IBApp(IBWrapper, IBClient):
             with open(filename, mode='r') as file_obj:
                 # Read in all saved contract info
                 contract_info = json.load(file_obj)
-                
+
                 # Loop through the top-level keys, which are instrument tickers
                 for tkr, info in contract_info.items():
                     # For each ticker, create the Contract object and save it
                     self.saved_contracts[tkr] = self._get_contract_from_dict(info)
-                    ct = Contract()                    
+                    ct = Contract()
                     for key, val in info.items():
                         if key != 'conId':
                             ct.__setattr__(key, val)
-                    
+
         except FileNotFoundError:
             pass
 
     def _get_contract_from_dict(self, info):
         """Create a Contract object from a dictionary of keys/values."""
-        _contract = Contract()                    
+        _contract = Contract()
         for key, val in info.items():
             _contract.__setattr__(key, val)
         return _contract
-                        
+
     def _copy_contract(self, target_contract):
         """Create a copy of a Contract object"""
         ct_dict = target_contract.__dict__
         return self._get_contract_from_dict(ct_dict)
-        
+
     def _save_contracts(self, file='contract_file.json', mode='w'):
         """Save contracts.
         """
@@ -201,7 +201,7 @@ class IBApp(IBWrapper, IBClient):
         current_order_id = self.order_id
         self.order_id += 1
         return current_order_id
-    
+
     def _get_next_req_id(self):
         """Retrieve the current class variable req_id and increment
         it by one.
@@ -211,7 +211,7 @@ class IBApp(IBWrapper, IBClient):
         current_req_id = self.req_id
         self.req_id += 1
         return current_req_id
-    
+
     def _get_all_matching_contracts(self, partial_contract):
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.symbolSamples is called,
@@ -234,14 +234,14 @@ class IBApp(IBWrapper, IBClient):
         # Loop until the server has completed the request.
         t0 = time.time()
         while not self._contract_details and time.time() - t0 < MAX_WAIT_TIME:
-            time.sleep(0.2)    
+            time.sleep(0.2)
         return self._contract_details
-    
+
     def get_contracts(self, listOfLocalSymbols):
         """Try to find saved contracts with the specified localSymbols.
         Arguments:
-            localSymbol (list): a list of local stringsrepresenting the 
-                (unique) local symbol associated with an instrument/contract. 
+            localSymbol (list): a list of local stringsrepresenting the
+                (unique) local symbol associated with an instrument/contract.
 
         Returns: (list) Matching contract(s)
         """
@@ -249,20 +249,20 @@ class IBApp(IBWrapper, IBClient):
         for symbol in listOfLocalSymbols:
             contracts.append(self.get_contract(symbol))
         return contracts
-    
+
     def get_contract(self, localSymbol):
         """Try to find a saved contract with the specified localSymbol.
         Arguments:
             localSymbol (str): a string representing the (unique) local
-                            symbol associated with an instrument/contract. 
+                            symbol associated with an instrument/contract.
 
         Returns: (Contract) Matching contract, or None if no match.
-        """        
+        """
         if localSymbol in self.saved_contracts:
             return self.saved_contracts[localSymbol]
         else:
             return None
-    
+
     def match_contract(self, partial_contract, max_wait_time=5):
         """Find the matching contract given a partial contract.
         Upon execution of IB backend, the EWrapper.symbolSamples is called,
@@ -273,7 +273,7 @@ class IBApp(IBWrapper, IBClient):
         Arguments:
             partial_contract (Contract): a Contract object with some of
                                                 the fields specified
-            max_wait_time (int): the maximum time (in seconds) to wait 
+            max_wait_time (int): the maximum time (in seconds) to wait
                         for a response from the IB API
 
         Returns: (Contract) Matching contract, or None if no match.
@@ -281,8 +281,8 @@ class IBApp(IBWrapper, IBClient):
         # If the contract has not already been saved, look it up.
         key = str(partial_contract)
         if key not in self.saved_partial_contracts:
-            self._get_all_matching_contracts(partial_contract, 
-                                            max_wait_time=max_wait_time)            
+            self._get_all_matching_contracts(partial_contract,
+                                            max_wait_time=max_wait_time)
 
             # If there are multiple matches, select the desired contract
             ct = self._select_contract(partial_contract)
@@ -293,10 +293,10 @@ class IBApp(IBWrapper, IBClient):
                 # Cache the results
                 self.saved_partial_contracts[key] = ct
                 self.saved_contracts[ct.localSymbol] = ct
-        
+
         # Return the cached contract
         return self.saved_partial_contracts[key]
-    
+
     def _select_contract(self, contract):
         if 'STK' == contract.secType:
             return self._select_equity_contract(contract)
@@ -317,8 +317,8 @@ class IBApp(IBWrapper, IBClient):
         elif 'FOP' == contract.secType:
             return self._select_futures_option_contract(contract)
         else:
-            raise ValueError('Invalid secType: {}'.format(contract.secType))       
-    
+            raise ValueError('Invalid secType: {}'.format(contract.secType))
+
     def _select_equity_contract(self, target_contract):
         # Select the proper contract
         for contract in self._contract_details:
@@ -351,10 +351,10 @@ class IBApp(IBWrapper, IBClient):
             return [x for x in contract_list if x.lastTradeDateOrContractMonth == expiry_date]
         else:
             raise ValueError('Unsupported filter type: {}'.format(filter_type))
-        
+
     def _select_futures_contract(self, target_contract):
         """Select the desired futures contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(self._contract_details, 
+        matching_contracts = self._filter_contracts(self._contract_details,
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
@@ -362,17 +362,17 @@ class IBApp(IBWrapper, IBClient):
             return matching_contracts[0]
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
-        
+
     def _select_options_contract(self, target_contract):
         """Select the desired options contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(self._contract_details, 
+        matching_contracts = self._filter_contracts(self._contract_details,
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
         elif len(matching_contracts) == 1:
             return matching_contracts[0]
         else:
-            smart_contracts = [x for x in matching_contracts 
+            smart_contracts = [x for x in matching_contracts
                                        if x.exchange == 'SMART']
             if not smart_contracts:
                 return None
@@ -380,7 +380,7 @@ class IBApp(IBWrapper, IBClient):
                 return smart_contracts[0]
             else:
                 raise ValueError('Multiple matching contracts - the search must be more specific.')
-        
+
     def _select_forex_contract(self, target_contract):
         if not self._contract_details:
             return None
@@ -388,7 +388,7 @@ class IBApp(IBWrapper, IBClient):
             return self._contract_details[0]
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
-        
+
     def _select_index_contract(self, target_contract):
         if not self._contract_details:
             return None
@@ -396,7 +396,7 @@ class IBApp(IBWrapper, IBClient):
             return self._contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
-        
+
     def _select_bond_contract(self, target_contract):
         if not self._contract_details:
             return None
@@ -404,7 +404,7 @@ class IBApp(IBWrapper, IBClient):
             return self._contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
-        
+
     def _select_commodity_contract(self, target_contract):
         if not self._contract_details:
             return None
@@ -412,7 +412,7 @@ class IBApp(IBWrapper, IBClient):
             return self._contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
-        
+
     def _select_mutual_fund_contract(self, target_contract):
         if not self._contract_details:
             return None
@@ -435,11 +435,11 @@ class IBApp(IBWrapper, IBClient):
         if dt.weekday() <= 4:
             new_day = dt.day + 4 - dt.weekday() + 14
             third_friday = datetime.date(year, month, new_day)
-        else:    
+        else:
             new_day = dt.day + (4 - dt.weekday()) % 7 + 14
             third_friday = datetime.date(year, month, new_day)
-        return third_friday    
-    
+        return third_friday
+
     def contractDetails(self, reqId:int, contract_details):
         """Callback from reqContractDetails.
         """
@@ -447,7 +447,7 @@ class IBApp(IBWrapper, IBClient):
 
         # Add all contracts to the to a list that the calling function can access.
         self._contract_details.append(contract_details.contract)
-        
+
     def symbolSamples(self, reqId: int,
                       contractDescriptions: ListOfContractDescription):
         """Callback from reqMatchingSymbols. Add contracts that are of
@@ -465,10 +465,10 @@ class IBApp(IBWrapper, IBClient):
         self._contract_details = contracts
 
     def _get_position_info(self):
-        """Get contracts and a dictionary of details for all account positions. 
+        """Get contracts and a dictionary of details for all account positions.
         Call the EClient method reqPositions, wait for
         a short time and then return the class variable positions.
-        
+
         Returns (tuple): (positions, contracts)
            positions (dict): contains details on the positions in the account
            contracts (list): Contract objects for each position in the account
@@ -477,21 +477,21 @@ class IBApp(IBWrapper, IBClient):
         self._position_contracts = []
         self.reqPositions()
         time.sleep(1)
-        
+
         # Save the full contract in case we need it later
         for _contract in self._position_contracts:
             if _contract.localSymbol not in self.saved_contracts:
                 # Match the contract, agnostic of which exchange the position actually traded on
                 _contract = self._clean_position_contracts(_contract)
-                full_contract = self.match_contract(_contract)            
+                full_contract = self.match_contract(_contract)
                 self.saved_contracts[full_contract.localSymbol] = full_contract
         return self.positions, self._position_contracts
-                
+
     def _include_mv_in_positions(self, df_pos):
         """Add market value information to a DataFrame of positions.
-        
+
         Arguments:
-            df_pos (DataFrame): contains information about the positions, including 
+            df_pos (DataFrame): contains information about the positions, including
                                 the localSymbol (IB's unique identifier)
         Returns:
             A copy of the original DataFrame, with 'price' and 'mktVal' columns included.
@@ -500,7 +500,7 @@ class IBApp(IBWrapper, IBClient):
         local_symbols = df_pos['localSymbol']
         contracts = [self.get_contract(s) for s in local_symbols]
         mkt_data = self.get_snapshot(contracts)
-        
+
         prices = np.nan * np.ones_like(local_symbols)
         for j, symbol in enumerate(local_symbols):
             _contract = self.get_contract(symbol)
@@ -510,18 +510,18 @@ class IBApp(IBWrapper, IBClient):
                     prices[j] = float(mkt_data['last_price'][symbol])
                 elif 'close_price' in mkt_data:
                     prices[j] = float(mkt_data['close_price'][symbol])
-                  
+
         # Add a column with market value info at the end of the Data Frame
         pos = df_pos.copy()
         pos.insert(pos.shape[1], 'price', prices)
         pos.insert(pos.shape[1], 'mktVal', prices * pos['multiplier'] * pos['size'])
         return pos
-        
+
     def get_positions(self, include_mv=False):
         """Get the account positions. If the class variable, positions, exists,
         return that value, else call the EClient method reqPositions, wait for
         a short time and then return the class variable positions.
-        
+
         Arguments:
         include_mv (bool): If True, then the current market value of each position
                                     will also be returned.
@@ -530,10 +530,10 @@ class IBApp(IBWrapper, IBClient):
         """
         # Fetch the positions and contracts from the account
         _positions, contracts = self._get_position_info()
-        
+
         # Create a DataFrame object from the dict of positions
         #   Use the localSymbol as the index
-        positions_df = pd.DataFrame.from_dict(_positions).set_index('localSymbol', 
+        positions_df = pd.DataFrame.from_dict(_positions).set_index('localSymbol',
                                                                      drop=False)
         positions_df.index.name = 'localSymbol'
 
@@ -544,7 +544,7 @@ class IBApp(IBWrapper, IBClient):
             return positions_df
 
     def _clean_position_contracts(self, target_contract):
-        """Make changes to contracts that are returned from get_positions in 
+        """Make changes to contracts that are returned from get_positions in
            order to make them findable within IB's contract universe.
            """
         if 'CASH' == target_contract.secType:
@@ -556,7 +556,7 @@ class IBApp(IBWrapper, IBClient):
             _contract = self._copy_contract(target_contract)
             _contract.exchange = ''
         return _contract
-        
+
     def position(self, account: str, _contract: Contract, position: float,
                  avgCost: float):
         super().position(account, _contract, position, avgCost)
@@ -565,7 +565,7 @@ class IBApp(IBWrapper, IBClient):
             'localSymbol': _contract.localSymbol,
             'symbol': _contract.symbol,
             'secType': _contract.secType,
-            'size': position,            
+            'size': position,
             'cost': avgCost,
             'totCost': avgCost * position,
             'multiplier': int(_contract.multiplier) if _contract.multiplier else 1,
@@ -580,7 +580,7 @@ class IBApp(IBWrapper, IBClient):
         """
         super().positionEnd()
         self.cancelPositions()
-        
+
     def get_account_details(self):
         self._account_details = []
         req_id = self._get_next_req_id()
@@ -589,7 +589,7 @@ class IBApp(IBWrapper, IBClient):
         while not self._account_details and time.time() - t0 < MAX_WAIT_TIME:
             time.sleep(0.2)
         return pd.DataFrame(self._account_details)
-    
+
     def get_total_account_value(self):
         acct_info = self.get_account_details()
         tags = acct_info['tag']
@@ -599,14 +599,14 @@ class IBApp(IBWrapper, IBClient):
     def accountSummary(self, reqId: int, account: str, tag: str, value: str,
                     currency: str):
         super().accountSummary(reqId, account, tag, value, currency)
-        info = dict(reqId=reqId, account=account, tag=tag, value=value, 
+        info = dict(reqId=reqId, account=account, tag=tag, value=value,
                              currency=currency)
-        self._account_details.append(info) 
+        self._account_details.append(info)
 
     def accountSummaryEnd(self, reqId: int):
         super().accountSummaryEnd(reqId)
         self.cancelAccountSummary(reqId)
-    
+
     def create_bracket_orders(self, req_orders=None):
         """Create orders, but do not place.
 
@@ -878,13 +878,13 @@ class IBApp(IBWrapper, IBClient):
 
     def get_snapshot(self, contractList: list, fields="", max_wait_time=MAX_WAIT_TIME):
         """Get sbapshot of market data for a set of contracts.
-        
+
         Arguments:
         contractList (list): a list of contracts for which to get market data
         fields: IB field codes that will be requested, in addition
-                    to the default data fields that IB returns. By default, 
+                    to the default data fields that IB returns. By default,
                     no additional data fields are requested.
-                    
+
         Returns:
         DataFrame with columns as the localSymbols and rows as the data field types.
         """
@@ -895,11 +895,11 @@ class IBApp(IBWrapper, IBClient):
             req_ids.add(req_id)
             self._market_data[req_id] = dict(localSymbol=contract.localSymbol)
             self.reqMktData(
-                            reqId=req_id, 
-                            contract=contract, 
-                            genericTickList=fields, 
-                            snapshot=True, 
-                            regulatorySnapshot=False, 
+                            reqId=req_id,
+                            contract=contract,
+                            genericTickList=fields,
+                            snapshot=True,
+                            regulatorySnapshot=False,
                             mktDataOptions=[]
             )
 
@@ -907,7 +907,7 @@ class IBApp(IBWrapper, IBClient):
             t0 = time.time()
             while self._snapshot_complete != req_ids and time.time() - t0 < max_wait_time:
                 time.sleep(0.1)
-                
+
             # Format the data for output
             df = dict()
             for req_id in req_ids:
@@ -915,7 +915,7 @@ class IBApp(IBWrapper, IBClient):
                 local_symbol = mdata['localSymbol']
                 df[local_symbol] = mdata
             return pd.DataFrame(df).T
-            
+
     def tickPrice(self, tickerId: int, field: int, price: float, attribs: TickAttrib):
         field_name = TickTypeEnum.to_str(field)
         self._market_data[tickerId][field_name] = price
@@ -925,10 +925,10 @@ class IBApp(IBWrapper, IBClient):
         self._market_data[tickerId][field_name] = size
 
     def tickString(self, tickerId: int, field: int, value: str):
-        field_name = TickTypeEnum.to_str(field)        
+        field_name = TickTypeEnum.to_str(field)
         self._market_data[tickerId][field_name] = value
 
-    def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float, 
+    def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float,
                               delta: float, optPrice: float, pvDividend: float,
                               gamma: float, vega: float, theta: float, undPrice: float):
         raise NotImplementedError('Option market data needs to be implemented.')
@@ -967,7 +967,7 @@ class IBApp(IBWrapper, IBClient):
             quotes[contract.localSymbol] = float(quote.iloc[-1]['close_price'])
 
         return quotes
-        
+
     def get_price_history(self, contracts=None, start=None, end=None,
                           bar_size="1 day", rth=False, info="TRADES"):
         """Get the price history for contracts.
@@ -1002,7 +1002,7 @@ class IBApp(IBWrapper, IBClient):
             if isinstance(start, datetime.datetime):
                 start = start.date()
             if isinstance(end, datetime.datetime):
-                end = end.date()                
+                end = end.date()
             n_days = np.busday_count(start, end)
             duration = "{} D".format(n_days)
         else:
@@ -1014,7 +1014,7 @@ class IBApp(IBWrapper, IBClient):
                 # Use the 'localSymbol' as a unique label for the time series
                 symbol = contract.localSymbol
                 assert symbol and symbol not in bars, \
-                                        'Missing (unique) local symbol.'                
+                                        'Missing (unique) local symbol.'
                 bars[symbol] = self._req_historical_data(
                     contract,
                     end=end.strftime("%Y%m%d %H:%M:%S"),
@@ -1060,21 +1060,21 @@ class IBApp(IBWrapper, IBClient):
         rth (bool): Return data only in regular trading hours
         """
         # Create a unique string ID for this request
-        request_string = self._get_historical_ts_request_string(contract=contract, end=end, 
+        request_string = self._get_historical_ts_request_string(contract=contract, end=end,
                             duration=duration, bar_size=bar_size, info=info, rth=rth)
-        
+
         # Only make API call if this request is new. Otherwise, retrieve cached data
         if self._is_new_request(request_string):
             self._historical_data[request_string] = []
             req_id = self._get_next_req_id()
             self._log_request_id(req_id, label=request_string)
-            self.reqHistoricalData(req_id, 
-                                   contract=contract, 
-                                   endDateTime=end, 
-                                   durationStr=duration, 
+            self.reqHistoricalData(req_id,
+                                   contract=contract,
+                                   endDateTime=end,
+                                   durationStr=duration,
                                    barSizeSetting=bar_size,
-                                   whatToShow=info, 
-                                   useRTH=rth, 
+                                   whatToShow=info,
+                                   useRTH=rth,
                                    formatDate=1,  # possible values are 1 (str) or 2 (int)
                                    keepUpToDate=False,
                                    chartOptions=[])
@@ -1093,9 +1093,9 @@ class IBApp(IBWrapper, IBClient):
 
     def _get_historical_ts_request_string(self, contract, end="", duration="20 D",
                              bar_size="1 day", info="TRADES", rth=False):
-        """Create a unique string for a historical time series data request."""        
+        """Create a unique string for a historical time series data request."""
         return '{}_{}_{}_{}_{}_{}'.format(contract, end, duration, bar_size, info, rth)
-    
+
     def _log_request_id(self, req_id, label):
         """Keep track of request IDs and their human-readable labels."""
         self._req_ids_to_string_ids[req_id] = label
@@ -1103,14 +1103,14 @@ class IBApp(IBWrapper, IBClient):
 
     def _get_req_id_from_label(self, label):
         return self._string_ids_to_req_ids[label]
-    
+
     def _get_label_from_req_id(self, req_id):
         return self._req_ids_to_string_ids[req_id]
-    
+
     def _is_new_request(self, label):
         """Check if a label has been logged with a request."""
         return label not in self._req_ids_to_string_ids
-    
+
     def _clean_cached_ts_data(self, bar_data):
         """Clean cached time series data, based on a request string."""
         # Extract the time series data from an array of BarData objects
@@ -1120,11 +1120,11 @@ class IBApp(IBWrapper, IBClient):
         return data
 
     def _convert_to_tws_date_format(self, d):
-        """Convert a datetime object to the date format TWS requires 
+        """Convert a datetime object to the date format TWS requires
            for historical data requests.
            """
         return d.strftime('%Y%m%d %H:%M %Z')
-    
+
     def _extract_date(self, d):
         """Extract datetime information from IB's date format."""
         if len(d) == 8:
@@ -1132,12 +1132,12 @@ class IBApp(IBWrapper, IBClient):
         else:
             fmt = '%Y%m%d %H:%M:%S'
         return datetime.datetime.strptime(d, fmt)
-    
+
     def historicalData(self, reqId: int, bar: BarData):
         """Overridden method from EWrapper. Checks to make sure reqId matches
         the self.historical_data[req_id] to confirm correct symbol.
         """
-        label = self._get_label_from_req_id(reqId)        
+        label = self._get_label_from_req_id(reqId)
         self._historical_data[label].append(bar)
 
     def historicalDataEnd(self, reqId: int, start: str, end: str):
@@ -1160,7 +1160,7 @@ class IBApp(IBWrapper, IBClient):
 
         contract = self.get_contract(localSymbol)
         self._histogram = None
-        req_id = self._get_next_req_id()        
+        req_id = self._get_next_req_id()
         self.reqHistogramData(req_id, contract, False, period)
         t0 = time.time()
         while self._histogram is None and time.time() - t0 < MAX_WAIT_TIME:
@@ -1169,7 +1169,7 @@ class IBApp(IBWrapper, IBClient):
         # Handle the case where no historical data is found
         if not p:
             return None
-        
+
         histogram = pd.DataFrame(
             columns=["price", "count"],
             data=[[float(p.price), int(p.count)] for p in self._histogram]
