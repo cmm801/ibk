@@ -40,7 +40,8 @@ class OrdersApp(base.BaseApp):
     """
     def __init__(self):
         super().__init__()
-        self._saved_orders = {}
+        self.__saved_orders = {}
+        self.__open_orders = []
 
     def _get_next_order_id(self):
         """Overload the Base class method to get order ID (the same as the request ID)."""
@@ -53,10 +54,10 @@ class OrdersApp(base.BaseApp):
         Returns (dict) {order_id: {order: order, contract: contract}}
         """
         if localSymbol is None:
-            return self._saved_orders
+            return self.__saved_orders
 
         orders = dict()
-        for oid, order in self._saved_orders.items():
+        for oid, order in self.__saved_orders.items():
             if order['contract'].localSymbol == localSymbol:
                 orders[oid] = order
         return orders
@@ -68,15 +69,15 @@ class OrdersApp(base.BaseApp):
         Arguments:
         order_id (int): The order_id of a previously created order.
         """
-        if order_id in self._saved_orders:
-            self.placeOrder(order_id, self._saved_orders[order_id]['contract'],
-                            self._saved_orders[order_id]['order'])
-        del self._saved_orders[order_id]
+        if order_id in self.__saved_orders:
+            self.placeOrder(order_id, self.__saved_orders[order_id]['contract'],
+                            self.__saved_orders[order_id]['order'])
+        del self.__saved_orders[order_id]
 
     def place_all_orders(self):
         """Place all the saved orders.
         """
-        order_ids = list(self._saved_orders.keys())
+        order_ids = list(self.__saved_orders.keys())
         for order_id in order_ids:
             self.place_order(order_id=order_id)
 
@@ -84,7 +85,7 @@ class OrdersApp(base.BaseApp):
         """Call the IBApi.EClient reqOpenOrders. Open orders are returned via
         the callback openOrder.
         """
-        self._open_orders = []
+        self.__open_orders = []
         self._open_order_request_complete = False
         self.reqOpenOrders()
         
@@ -92,8 +93,14 @@ class OrdersApp(base.BaseApp):
         while not self._open_order_request_complete and time.time() - start_time < max_wait_time:
             time.sleep(0.1)
 
-        return self._open_orders
+        return self.__open_orders
     
+    def _append_order(self, _order):
+        self.__open_orders.append(_order)
+    
+    def _update_saved_orders(self, _order):
+        self.__saved_orders.update(_order)        
+        
     def create_simple_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
 
@@ -126,11 +133,15 @@ class OrdersApp(base.BaseApp):
                 "contract": req_order['contract'],
             }
 
-            self._saved_orders.update(new_orders)
+            self._update_saved_orders(new_orders)
             return new_orders
         
     def create_bracket_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
+           NOTE: to get TWS to execute these orders properly, we must have the 
+                first two orders with transmit=False, and then when the last order
+                goes to TWS, it uses the 'transmit' flag on this last order to properly
+                handle the order group.
 
         Arguments:
         req_orders (list): list of dictionaries - keys are:
@@ -156,7 +167,7 @@ class OrdersApp(base.BaseApp):
             parent.lmtPrice = req_order['price']
             parent.outsideRth = req_order['outside_rth']
             parent.tif = req_order['tif']
-            parent.transmit = transmit
+            parent.transmit = False
             
             new_orders[order_id] = {
                 "order": parent, 
@@ -174,7 +185,7 @@ class OrdersApp(base.BaseApp):
                 profit_taker.totalQuantity = req_order['quantity']
                 profit_taker.lmtPrice = req_order['profit_price']
                 profit_taker.parentId = parent.orderId
-                profit_taker.transmit = transmit
+                profit_taker.transmit = False
                 
                 new_orders[order_id] = {
                     "order": profit_taker, 
@@ -198,7 +209,7 @@ class OrdersApp(base.BaseApp):
                     "order": stop_loss, 
                     "contract": req_order['contract'],
                 }
-            self._saved_orders.update(new_orders)
+            self._update_saved_orders(new_orders)
             return new_orders
 
     def create_trailing_stop_orders(self, req_orders=None, transmit=False):
@@ -240,11 +251,11 @@ class OrdersApp(base.BaseApp):
                 "contract": req_order['contract'],
             }
             
-            self._saved_orders.update(new_orders)
+            self._update_saved_orders(new_orders)
             return new_orders
 
     def create_stop_limit_orders(self, req_orders=None, transmit=False):
-        """Create a trailing stop order.
+        """Create a stop limit order.
 
         Arguments:
         req_orders (list): list of dictionaries - keys are:
@@ -295,7 +306,7 @@ class OrdersApp(base.BaseApp):
                     "contract": req_order['contract']
                 }
                 
-            self._saved_orders.update(new_orders)
+            self._update_saved_orders(new_orders)
             return new_orders
 
     def create_pegged_orders(self, req_orders=None, transmit=False):
@@ -344,7 +355,7 @@ class OrdersApp(base.BaseApp):
                 "contract": req_order['contract'],
             }
             
-            self._saved_orders.update(new_orders)
+            self._update_saved_orders(new_orders)
             return new_orders
 
     def quick_bracket(self, symbol=None, action=None, quantity=None, amount=None,
@@ -410,11 +421,11 @@ class OrdersApp(base.BaseApp):
         EWrapper class.
         """
         super().openOrder(orderId, contract, order, orderState)
-        self._open_orders.append({
-            'order_id': orderId,
-            'contract': contract,
-            'order': order
-        })
+        self._append_order({
+                            'order_id': orderId,
+                            'contract': contract,
+                            'order': order
+                          })
         
     def openOrderEnd(self):
         super().openOrderEnd()

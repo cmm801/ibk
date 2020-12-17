@@ -30,17 +30,46 @@ class ContractsApp(base.BaseApp):
     the method is over-ridden to provide an entry point into the program.
 
     class variables:
-    _saved_contracts (dict): keys are symbols, values are dictionaries of
-        information to uniquely define a contract used for trading.
+    __saved_contracts (dict): keys are symbols, values are dictionaries of
+                information to uniquely define a contract used for trading.
     """
     def __init__(self):
         super().__init__()
-        self._saved_partial_contracts = dict()
-        self._saved_contracts = dict()        
-        self._contract_details = {}
+        self.__saved_partial_contracts = dict()
+        self.__saved_contracts = dict()        
+        self.__contract_details = dict()
+        self.__contract_details_request_complete = dict()
+        self.__market_rule_info = dict()
         
         # Load the saved contracts
         self._load_contracts('contract_file.json')
+        
+    def get_contract_details(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
+        """Find all matching contracts given a partial contract.
+        Upon execution of IB backend, the EWrapper.reqContractDetails is called,
+        which is over-ridden to save the contracts to a class dictionary.
+        This function then monitors the class dictionary until
+        the contract is found and then returns the contract.
+
+        Arguments:
+            partial_contract (Contract): a Contract object with some of
+                                                the fields specified
+
+        Returns: (list) Matching contract(s).
+        """
+        # Get the next request ID and initialize data structures to collect the results
+        req_id = self._get_next_req_id()
+        self.__contract_details[req_id] = []
+        self.__contract_details_request_complete[req_id] = False
+
+        # Call EWrapper.reqContractDetails to get all partially matching contracts
+        self.reqContractDetails(req_id, partial_contract)
+
+        # Loop until the server has completed the request.
+        t0 = time.time()
+        while not self.__contract_details_request_complete[req_id] and time.time() - t0 < max_wait_time:
+            time.sleep(0.2)    
+        return self.__contract_details[req_id]
     
     def get_contract(self, localSymbol: str):
         """Try to find a saved contract with the specified localSymbol.
@@ -50,11 +79,16 @@ class ContractsApp(base.BaseApp):
 
         Returns: (Contract) Matching contract, or None if no match.
         """        
-        if localSymbol in self._saved_contracts:
-            return self._saved_contracts[localSymbol]
+        if localSymbol in self.__saved_contracts:
+            return self.__saved_contracts[localSymbol]
         else:
             return None
     
+    def add_to_saved_contracts(self, contractList):
+        for contract in contractList:
+            self.__saved_contracts[contract.localSymbol] = contract
+        self._save_contracts()
+
     def match_contract(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
         """Find the matching contract given a partial contract.
 
@@ -68,56 +102,88 @@ class ContractsApp(base.BaseApp):
         """
         # If the contract has not already been saved, look it up.
         key = str(partial_contract)
-        if key not in self._saved_partial_contracts:
-            self.get_all_matching_contracts(partial_contract, 
+        if key not in self.__saved_partial_contracts:
+            contract_details = self.get_contract_details(partial_contract, 
                                             max_wait_time=max_wait_time)            
 
             # If there are multiple matches, select the desired contract
-            ct = self._select_contract(partial_contract)
+            possible_contracts = [x.contract for x in contract_details]
+            ct = self._select_contract(partial_contract, possible_contracts)
             if ct is None:
                 s = partial_contract.symbol
                 raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
             else:
                 # Cache the results
-                self._saved_partial_contracts[key] = ct
-                self._saved_contracts[ct.localSymbol] = ct
+                self.__saved_partial_contracts[key] = ct
+                self.__saved_contracts[ct.localSymbol] = ct
         
         # Return the cached contract
-        return self._saved_partial_contracts[key]
+        return self.__saved_partial_contracts[key]
 
-    def contractDetails(self, reqId:int, contract_details):
-        """Callback from reqContractDetails.
-        """
-        super().contractDetails(reqId, contract_details)
+    def get_market_rule_info(self, rule_ids, max_wait_time=MAX_WAIT_TIME):
+        """Get market rule information based on rule ids.
+        
+           Arguments:
+           rule_ids is a list of integers, representing different rule Ids.
+           max_wait_time is the max time (in seconds) to wait for a response before timing out.
+           """
+        for rid in set(rule_ids):
+            assert isinstance(rid, int), 'Market rule ids must be integers.'
+            if rid not in self.__market_rule_info:
+                self.reqMarketRule(rid)
+                
+        is_completed = lambda : all([x in self.__market_rule_info for x in set(rule_ids)])
+        t0 = time.time()
+        while not is_completed() and time.time() - t0 < max_wait_time:
+            time.sleep(0.2)
+        if is_completed():
+            return [self.__market_rule_info[x] for x in rule_ids]
+        else:
+            raise ValueError('Request has failed.')
+        
+    def contractDetails(self, reqId, contractDetailsObject):
+        """Callback from reqContractDetails for non-bond contracts."""
+        super().contractDetails(reqId, contractDetailsObject)
+        self.__contract_details[reqId].append(contractDetailsObject)
 
-        # Add all contracts to the to a list that the calling function can access.
-        self._contract_details.append(contract_details.contract)
-
-    def _select_contract(self, contract):
+    def bondContractDetails(self, reqId, contractDetailsObject):
+        """Callback from reqContractDetails, specifically for bond contracts."""
+        super().contractDetails(reqId, contractDetailsObject)
+        self.__contract_details[reqId].append(contractDetailsObject)        
+        
+    def contractDetailsEnd(self, reqId):
+        super().contractDetailsEnd(reqId)
+        self.__contract_details_request_complete[reqId] = True
+        
+    def marketRule(self, marketRuleId, priceIncrements):
+        super().marketRule(marketRuleId, priceIncrements)
+        self.__market_rule_info[marketRuleId] = priceIncrements
+        
+    def _select_contract(self, contract, contract_details):
         if 'STK' == contract.secType:
-            return self._select_equity_contract(contract)
+            return self._select_equity_contract(contract, contract_details)
         elif 'FUT' == contract.secType:
-            return self._select_futures_contract(contract)
+            return self._select_futures_contract(contract, contract_details)
         elif 'OPT' == contract.secType:
-            return self._select_options_contract(contract)
+            return self._select_options_contract(contract, contract_details)
         elif 'IND' == contract.secType:
-            return self._select_index_contract(contract)
+            return self._select_index_contract(contract, contract_details)
         elif 'CASH' == contract.secType:
-            return self._select_forex_contract(contract)
+            return self._select_forex_contract(contract, contract_details)
         elif 'BOND' == contract.secType:
-            return self._select_bond_contract(contract)
+            return self._select_bond_contract(contract, contract_details)
         elif 'CMDTY' == contract.secType:
-            return self._select_commodity_contract(contract)
+            return self._select_commodity_contract(contract, contract_details)
         elif 'FUND' == contract.secType:
-            return self._select_mutual_fund_contract(contract)
+            return self._select_mutual_fund_contract(contract, contract_details)
         elif 'FOP' == contract.secType:
-            return self._select_futures_option_contract(contract)
+            return self._select_futures_option_contract(contract, contract_details)
         else:
             raise ValueError('Invalid secType: {}'.format(contract.secType))       
     
-    def _select_equity_contract(self, target_contract):
+    def _select_equity_contract(self, target_contract, contract_details):
         # Select the proper contract
-        for contract in self._contract_details:
+        for contract in contract_details:
             if target_contract.currency == 'USD':
                 # NYSE stock
                 if contract.primaryExchange in ["NYSE", 'ARCA', 'NASDAQ', 'BATS']:
@@ -148,9 +214,9 @@ class ContractsApp(base.BaseApp):
         else:
             raise ValueError('Unsupported filter type: {}'.format(filter_type))
         
-    def _select_futures_contract(self, target_contract):
+    def _select_futures_contract(self, target_contract, contract_details):
         """Select the desired futures contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(self._contract_details, 
+        matching_contracts = self._filter_contracts(contract_details, 
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
@@ -159,9 +225,9 @@ class ContractsApp(base.BaseApp):
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
         
-    def _select_options_contract(self, target_contract):
+    def _select_options_contract(self, target_contract, contract_details):
         """Select the desired options contract in case there are multiple matches."""
-        matching_contracts = self._filter_contracts(self._contract_details, 
+        matching_contracts = self._filter_contracts(contract_details, 
                                 target_contract, filter_type='third_friday')
         if not matching_contracts:
             return None
@@ -177,51 +243,51 @@ class ContractsApp(base.BaseApp):
             else:
                 raise ValueError('Multiple matching contracts - the search must be more specific.')
         
-    def _select_forex_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_forex_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
         
-    def _select_index_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_index_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
         
-    def _select_bond_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_bond_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
         
-    def _select_commodity_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_commodity_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
         
-    def _select_mutual_fund_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_mutual_fund_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _select_futures_option_contract(self, target_contract):
-        if not self._contract_details:
+    def _select_futures_option_contract(self, target_contract, contract_details):
+        if not contract_details:
             return None
-        elif len(self._contract_details) == 1:
-            return self._contract_details[0]
+        elif len(contract_details) == 1:
+            return contract_details[0]
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
@@ -236,7 +302,7 @@ class ContractsApp(base.BaseApp):
                 # Loop through the top-level keys, which are instrument tickers
                 for tkr, info in contract_info.items():
                     # For each ticker, create the Contract object and save it
-                    self._saved_contracts[tkr] = self._get_contract_from_dict(info)
+                    self.__saved_contracts[tkr] = self._get_contract_from_dict(info)
                     ct = ibapi.contract.Contract()                    
                     for key, val in info.items():
                         if key != 'conId':
@@ -260,38 +326,8 @@ class ContractsApp(base.BaseApp):
         """Save contracts.
         """
         with open(file, mode=mode) as file_obj:
-            contents = { k: v.__dict__ for k, v in self._saved_contracts.items()}
+            contents = { k: v.__dict__ for k, v in self.__saved_contracts.items()}
             json.dump(contents, file_obj)
-
-    def add_to_saved_contracts(self, contractList):
-        for contract in contractList:
-            self._saved_contracts[contract.localSymbol] = contract
-        self._save_contracts()
-        
-    def get_all_matching_contracts(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
-        """Find all matching contracts given a partial contract.
-        Upon execution of IB backend, the EWrapper.reqContractDetails is called,
-        which is over-ridden to save the contracts to a class dictionary.
-        This function then monitors the class dictionary until
-        the contract is found and then returns the contract.
-
-        Arguments:
-            partial_contract (Contract): a Contract object with some of
-                                                the fields specified
-
-        Returns: (list) Matching contract(s).
-        """
-        self._contract_details = []
-
-        # The IB server will call contractDetails upon completion.
-        req_id = self._get_next_req_id()
-        self.reqContractDetails(req_id, partial_contract)
-
-        # Loop until the server has completed the request.
-        t0 = time.time()
-        while not self._contract_details and time.time() - t0 < max_wait_time:
-            time.sleep(0.2)    
-        return self._contract_details
 
     def _clean_position_contracts(self, target_contract):
         """Make changes to contracts that are returned from get_positions in 

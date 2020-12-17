@@ -92,8 +92,7 @@ class BaseApp(IBWrapper, IBClient):
                                                          'Check that the correct port has been specified and ',
                                                          'that the client Id is not already in use.\n',
                                                          errorString]))
-        else:
-            print('ERROR: request {}. (Unimplemented error handler).'.format(reqId))
+
 
     def nextValidId(self, reqId: int):
         """Method of EWrapper.
@@ -141,7 +140,7 @@ def _find_existing_app_instance(class_handle, port, clientId, global_apps, globa
         clientIds = [cid for cid, app in global_apps.items()]
         while clientIds:
             cid = clientIds.pop(0)
-            if global_ports[cid] == port:
+            if global_ports[cid] == port and global_apps[cid].isConnected():
                 return global_apps[cid]
         # If we get here, then no application was found with matching type and port
         return None
@@ -170,7 +169,7 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
     # Retrieve application if one already exists with these specs
     app = _find_existing_app_instance(class_handle, port=port, clientId=clientId, \
                                      global_apps=global_apps, global_ports=global_ports)    
-    if app is not None and app.isConnected():
+    if app is not None:
         return app
     else:
         # ...otherwise open a new connection
@@ -195,15 +194,17 @@ def _get_instance(class_handle, port, clientId=None, global_apps=None, global_po
                 else:
                     cid += 1                    
                     j += 1
+
         if app is None or not app.isConnected():
             # If still not connecting, try more time to raise an exception
             msg = ''.join(['Connection could not be established. ',
                            'Check that the port is correct, and that the correct port has been specified.'])
             raise ConnectionNotEstablishedError(msg)
         else:
+            global_apps[app.clientId] = app
             global_threads[app.clientId] = _thread
             global_ports[app.clientId] = port
-            print("serverVersion:%s connectionTime:%s:clientId:%s".format(\
+            print("serverVersion:{} connectionTime:{} clientId:{}".format(\
                         app.serverVersion(), app.twsConnectionTime(), app.clientId))
             print('MarketDataApp connecting to IB...')
             return app
