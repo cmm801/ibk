@@ -160,7 +160,8 @@ def _connect_and_check(class_handle, port, clientId):
     else:
         return None, None
 
-def _get_instance(class_handle, port, clientId=None, global_apps=None, global_ports=None, global_threads=None):
+def _get_instance(class_handle, port, clientId=None, global_apps=None, 
+                  global_ports=None, global_threads=None):
     """Entry point into the program.
 
     Arguments:
