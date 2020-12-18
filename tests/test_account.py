@@ -9,7 +9,7 @@ import constants
 import master
 
 
-class SimpleTest(unittest.TestCase):
+class AccountTest(unittest.TestCase):
     def setUp(self):
         """ Perform any required set-up before each method call. """
         pass

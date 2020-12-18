@@ -47,8 +47,8 @@ class Master(object):
         Returns: (list) a list of ContractDetails objects - one for each
             possible matching contract.
         """
-        return self.contracts_app.find_matching_contracts(max_wait_time=max_wait_time, 
-                                                          **kwargs)
+        return self.contracts_app.find_matching_contracts(max_wait_time=max_wait_time, **kwargs)
+
     def find_best_matching_contract(self, max_wait_time=None, **kwargs):
         """Find 'best' contract among possibilities matching desired attributes.
 
@@ -63,6 +63,23 @@ class Master(object):
         """
         return self.contracts_app.find_best_matching_contract(max_wait_time=max_wait_time,
                                                               **kwargs)
+
+    def find_next_live_future(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+        """Find the next live contract for a given future.
+
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                for a response from the IB API
+            min_days_until_expiry: (int) the fewest allowable days until
+                expiry that is allowed for the future's contract
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (Contract) the 'best' matching Contract object.
+        """
+        return self.contracts_app.find_next_live_future(max_wait_time=max_wait_time,
+                        min_days_until_expiry=min_days_until_expiry, **kwargs)
 
     ##################################################################
     # Accounts and Positions
@@ -134,6 +151,7 @@ class Master(object):
     ##################################################################
     # Orders
     ##################################################################
+
     def get_saved_orders(self, localSymbol=None):
         orders_app = self.orders_app
         return orders_app.get_saved_orders(localSymbol=localSymbol)
@@ -149,6 +167,17 @@ class Master(object):
     def get_open_orders(self):
         orders_app = self.orders_app
         return orders_app.get_open_orders()
+
+    def create_market_order(self, contract, action, totalQuantity, **kwargs):
+        """ Create a market order.
+
+            Arguments:
+                contract (Contract): Contract object to be traded
+                action (str): "BUY" | "SELL"
+                totalQuantity (float): Order quantity (units of the contract).        
+        """
+        return self.orders_app.create_market_order(contract, action=action, 
+                                                   totalQuantity=totalQuantity, **kwargs)
 
     def create_simple_orders(self, req_orders=None, transmit=False):
         orders_app = self.orders_app

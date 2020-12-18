@@ -17,6 +17,8 @@ import os
 import time
 import json
 import datetime
+import numpy as np
+import pandas as pd
 
 import ibapi
 import base
@@ -154,6 +156,23 @@ class ContractsApp(base.BaseApp):
             self.__saved_contracts[ct.localSymbol] = ct
             return ct
 
+    def find_next_live_future(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+        """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
+        """
+        sec_type = kwargs.get('secType', 'FUT')
+        if sec_type != 'FUT':
+            raise ValueError(f'Security type is expected to be "FUT", but instead found "{sec_type}".')
+        else:
+            kwargs['secType'] = 'FUT'
+
+        # Get matching contracts
+        contracts = self.find_matching_contracts(max_wait_time=max_wait_time, **kwargs)
+
+        # Find the nearest contract with sufficient days until expiration
+        exp_dates = np.array([pd.Timestamp(c.realExpirationDate).date() for c in contracts])
+        idx = np.where(exp_dates > pd.Timestamp.now() + pd.DateOffset(days=min_days_until_expiry))[0][0]
+        return contracts[idx].contract
+
     def get_market_rule_info(self, rule_ids, max_wait_time=None):
         """Get market rule information based on rule ids.
 
@@ -201,7 +220,7 @@ class ContractsApp(base.BaseApp):
         # Create a contract using the user-provided information
         partial_contract = ibapi.contract.Contract()
         for key, val in kwargs.items():
-            if key not in partial_contract.__dict__:
+            if not hasattr(partial_contract, key):
                 raise ValueError(f'Unsupported Contract variable name was provided: {key}')
             else:
                 partial_contract.__setattr__(key, val)   

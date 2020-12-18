@@ -15,6 +15,9 @@ Classes
         the functionality.
 """
 import time
+import numpy as np
+import pandas as pd
+
 from ibapi.contract import Contract
 from ibapi.common import OrderId
 from ibapi.order import Order
@@ -100,6 +103,39 @@ class OrdersApp(base.BaseApp):
 
     def _update_saved_orders(self, _order):
         self.__saved_orders.update(_order)
+        
+    def create_market_order(self, contract, action, totalQuantity, **kwargs):
+        """ Create a market order.
+
+            Arguments:
+                contract (Contract): Contract object to be traded
+                action (str): "BUY" | "SELL"
+                totalQuantity (float): Order quantity (units of the contract).        
+        """
+        if 'orderType' in kwargs and kwargs['orderType'] != 'MKT':
+            raise ValueError(f'Expected "orderType" to be "MKT" but instead found: {orderType}')
+
+        # Get the next order ID
+        orderId = self._get_next_order_id()
+        
+        # Create an Order object with the minimal set of variables
+        _order = Order()
+        _order.orderId = orderId
+        _order.action = action
+        _order.totalQuantity = totalQuantity
+        _order.orderType = 'MKT'
+
+        # Set any additional specifications in the Order
+        for key, val in kwargs.items():
+            if not hasattr(_order, key):
+                raise ValueError(f'Unsupported Order variable name was provided: {key}')
+            else:
+                _order.__setattr__(key, val)
+        
+        # Save the new order
+        new_order = {orderId : {"order": _order, "contract": contract}}
+        self._update_saved_orders(new_order)
+        return new_order
 
     def create_simple_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
