@@ -15,6 +15,7 @@ Classes
 """
 
 import time
+import numpy as np
 import pandas as pd
 import ibapi
 import base
@@ -57,19 +58,32 @@ class AccountApp(base.BaseApp):
         return positions_df, contracts
 
     def get_account_details(self):
+        """ Get a DataFrame with the account details.
+        """
         self._account_details = []
         req_id = self._get_next_req_id()
         self.reqAccountSummary(req_id, "All", "$LEDGER")
         t0 = time.time()
         while not self._account_details and time.time() - t0 < MAX_WAIT_TIME:
             time.sleep(0.2)
-        return pd.DataFrame(self._account_details)
+        
+        # Create a DataFrame from the results
+        df = pd.DataFrame(self._account_details)
+        
+        # Check that there is only a single account number that is returned
+        n_accounts = len(set(df['account']))
+        if n_accounts > 1:
+            raise ValueError(f'Only a single account was expected, but found {n_accounts}')
+        else:
+            return df.set_index('tag')
 
     def get_total_account_value(self):
         acct_info = self.get_account_details()
-        tags = acct_info['tag']
-        tot_acct_val = float(acct_info[acct_info['tag'] == 'NetLiquidationByCurrency'].value)
-        return tot_acct_val
+        key = 'NetLiquidationByCurrency'
+        if key not in acct_info.index:
+            return np.nan
+        else:
+            return float(acct_info.loc[key, 'value'])
 
     def position(self, account: str, _contract: ibapi.contract.Contract, position: float,
                  avgCost: float):
@@ -124,20 +138,3 @@ class AccountApp(base.BaseApp):
         while not self._position_request_completed:
             time.sleep(0.05)
         return self._positions, self._position_contracts
-
-
-# Declare global variables used to handle the creation of a singleton class
-__apps = dict()
-__ports = dict()
-__api_threads = dict()
-
-def get_instance(port, clientId=None):
-    """Entry point into the program.
-
-    Arguments:
-    port (int): Port number that IBGateway, or TWS is listening.
-    """
-    global __apps, __ports, __api_threads
-    _kwargs = dict()
-    return base._get_instance(AccountApp, port=port, clientId=clientId,\
-                         global_apps=__apps, global_ports=__ports, global_threads=__api_threads)

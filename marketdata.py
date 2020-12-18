@@ -924,19 +924,3 @@ class MarketDataApp(base.BaseApp):
         reqObj = self._get_request_object_from_id(req_id)
         reqObj.append_data(timestamp)
 
-
-# Declare global variables used to handle the creation of a singleton class
-__apps = dict()
-__ports = dict()
-__api_threads = dict()
-
-def get_instance(port, clientId=None):
-    """Entry point into the program.
-
-    Arguments:
-    port (int): Port number that IBGateway, or TWS is listening.
-    """
-    global __apps, __ports, __api_threads
-    _kwargs = dict()
-    return base._get_instance(MarketDataApp, port=port, clientId=clientId,\
-                         global_apps=__apps, global_ports=__ports, global_threads=__api_threads)

@@ -5,13 +5,6 @@ import pandas as pd
 
 import ibapi
 
-#ib_path = '/Users/chris/programming/finance/trading'
-#sys.path.insert(0, ib_path)
-#sys.path.insert(0, os.path.join(ib_path, 'interactivebrokers'))
-
-#import interactivebrokers.constants as constants
-#import interactivebrokers.master as master
-
 import constants
 import master
 
@@ -45,6 +38,7 @@ class SimpleTest(unittest.TestCase):
             
             This method can be used to destroy any structures created in setUpClass.
         """
+        cls.app.disconnect()
         del cls.app
 
     def test_get_total_account_value(self):
@@ -85,7 +79,7 @@ class SimpleTest(unittest.TestCase):
             ctr += 1            
             with self.subTest(i=ctr):
                 self.assertIsInstance(c, ibapi.contract.Contract,
-                    msg="The contract is notof type Contract.")
+                    msg="The contract is not of type Contract.")
 
         # Check that the index of the positions DataFrame is the localSymbol
         ctr += 1
@@ -93,16 +87,35 @@ class SimpleTest(unittest.TestCase):
             self.assertEqual('localSymbol', positions_df.index.name,
                 msg='The index should be the "localSymbol" information.')
 
-                
-        #with self.assertRaises(ValueError):
-        #    self.stratObj.initial_positions = [1, 2, 3]
+        # Check that the account number is the paper-trading account number
+        for acct_num in positions_df.account.values:
+            ctr += 1
+            with self.subTest(i=ctr):
+                self.assertEqual(acct_num, constants.TWS_PAPER_ACCT_NUM,
+                    msg=f'The account number is unexpected: {acct_num}.')
 
+    def test_get_account_details(self):
+        """ Check that the total account value is correct.
+        """
+        # Get the account details
+        acct_df = self.app.get_account_details()
+        
+        # Check that the account value is as expected
+        tot_acct_val = self.app.get_total_account_value()
+        ctr = 0
+        with self.subTest(i=ctr):
+            acct_val_2 = float(acct_df.loc['NetLiquidationByCurrency', 'value'])
+            self.assertAlmostEqual(tot_acct_val, acct_val_2,
+                                   msg=f'The account values do not match.')
 
-        #with self.subTest(i=k):
-        #    self.assertAlmostEqual(correct_final_pos[k], positions.values[-1, k], 
-        #                           places=places, msg='Positions are not as expected.')
-        #    self.assertAlmostEqual(correct_final_perf[k], performance.values[-1, k],
-        #                           places=places, msg='Performance is not as expected.')
+        # Check that some columns appear in the DataFrame
+        cols = ['account', 'value', 'currency']
+        for col in cols:
+            ctr += 1            
+            with self.subTest(i=ctr):
+                self.assertIn(col, acct_df.columns,
+                    msg = f'The account details do not include column: {col}')
+
 
 if __name__ == '__main__':
     unittest.main()

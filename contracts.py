@@ -50,7 +50,7 @@ class ContractsApp(base.BaseApp):
         # Load the saved contracts
         self._load_contracts(FILENAME_CONTRACTS)
 
-    def get_contract_details(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
+    def get_contract_details(self, partial_contract, max_wait_time=None):
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.reqContractDetails is called,
         which is over-ridden to save the contracts to a class dictionary.
@@ -63,6 +63,9 @@ class ContractsApp(base.BaseApp):
 
         Returns: (list) Matching contract(s).
         """
+        if max_wait_time is None:
+            max_wait_time = MAX_WAIT_TIME
+        
         # Get the next request ID and initialize data structures to collect the results
         req_id = self._get_next_req_id()
         self.__contract_details[req_id] = []
@@ -85,54 +88,82 @@ class ContractsApp(base.BaseApp):
 
         Returns: (Contract) Matching contract, or None if no match.
         """
-        if localSymbol in self.__saved_contracts:
+        if self.is_saved_contract(localSymbol):
             return self.__saved_contracts[localSymbol]
         else:
             return None
 
+    def is_saved_contract(self, localSymbol):
+        return localSymbol in self.__saved_contracts
+        
     def add_to_saved_contracts(self, contractList):
         for contract in contractList:
             self.__saved_contracts[contract.localSymbol] = contract
         self._save_contracts()
 
-    def match_contract(self, partial_contract, max_wait_time=MAX_WAIT_TIME):
-        """Find the matching contract given a partial contract.
+    def find_matching_contracts(self, max_wait_time=None, **kwargs):
+        """Find a list of matching contracts given some desired attributes.
 
         Arguments:
-            partial_contract (Contract): a Contract object with some of
-                                                the fields specified
             max_wait_time (int): the maximum time (in seconds) to wait
                         for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
 
-        Returns: (Contract) Matching contract, or None if no match.
+        Returns: (list) a list of ContractDetails objects - one for each
+            possible matching contract.
         """
-        # If the contract has not already been saved, look it up.
-        key = str(partial_contract)
-        if key not in self.__saved_partial_contracts:
-            contract_details = self.get_contract_details(partial_contract,
-                                            max_wait_time=max_wait_time)
+        # Create a partially complete Contract object
+        partial_contract = self._create_partial_contract(**kwargs)
+        
+        # Get the details of the matching contracts
+        contract_details = self.get_contract_details(partial_contract,
+                                        max_wait_time=max_wait_time)
 
-            # If there are multiple matches, select the desired contract
-            possible_contracts = [x.contract for x in contract_details]
-            ct = self._select_contract(partial_contract, possible_contracts)
-            if ct is None:
-                s = partial_contract.symbol
-                raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
-            else:
-                # Cache the results
-                self.__saved_partial_contracts[key] = ct
-                self.__saved_contracts[ct.localSymbol] = ct
+        # Return the matching contract details
+        return contract_details
 
-        # Return the cached contract
-        return self.__saved_partial_contracts[key]
+    def find_best_matching_contract(self, max_wait_time=None, **kwargs):
+        """Find 'best' contract among possibilities matching desired attributes.
 
-    def get_market_rule_info(self, rule_ids, max_wait_time=MAX_WAIT_TIME):
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                        for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (Contract) the 'best' matching Contract object.
+        """
+        # Create a partially complete Contract object
+        partial_contract = self._create_partial_contract(**kwargs)
+
+        # Find all contracts matching our partial-specified contract
+        contract_details = self.find_matching_contracts(max_wait_time=max_wait_time, 
+                                                        **kwargs)
+
+        # If there are multiple matches, select the desired contract
+        possible_contracts = [x.contract for x in contract_details]
+        ct = self._select_contract(partial_contract, possible_contracts)
+        if ct is None:
+            s = partial_contract.symbol
+            raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
+        else:
+            # Cache the results
+            self.__saved_contracts[ct.localSymbol] = ct
+            return ct
+
+    def get_market_rule_info(self, rule_ids, max_wait_time=None):
         """Get market rule information based on rule ids.
 
            Arguments:
            rule_ids is a list of integers, representing different rule Ids.
            max_wait_time is the max time (in seconds) to wait for a response before timing out.
            """
+        if max_wait_time is None:
+            max_wait_time = MAX_WAIT_TIME
+
         for rid in set(rule_ids):
             assert isinstance(rid, int), 'Market rule ids must be integers.'
             if rid not in self.__market_rule_info:
@@ -164,6 +195,17 @@ class ContractsApp(base.BaseApp):
     def marketRule(self, marketRuleId, priceIncrements):
         super().marketRule(marketRuleId, priceIncrements)
         self.__market_rule_info[marketRuleId] = priceIncrements
+
+    def _create_partial_contract(self, **kwargs):
+        """ Create a partial contract from key/value pairs. """
+        # Create a contract using the user-provided information
+        partial_contract = ibapi.contract.Contract()
+        for key, val in kwargs.items():
+            if key not in partial_contract.__dict__:
+                raise ValueError(f'Unsupported Contract variable name was provided: {key}')
+            else:
+                partial_contract.__setattr__(key, val)   
+        return partial_contract
 
     def _select_contract(self, contract, contract_details):
         if 'STK' == contract.secType:
@@ -350,20 +392,3 @@ class ContractsApp(base.BaseApp):
             _contract = self._copy_contract(target_contract)
             _contract.exchange = ''
         return _contract
-
-
-# Declare global variables used to handle the creation of a singleton class
-__apps = dict()
-__ports = dict()
-__api_threads = dict()
-
-def get_instance(port, clientId=None):
-    """Entry point into the program.
-
-    Arguments:
-    port (int): Port number that IBGateway, or TWS is listening.
-    """
-    global __apps, __ports, __api_threads
-    _kwargs = dict()
-    return base._get_instance(ContractsApp, port=port, clientId=clientId,\
-                         global_apps=__apps, global_ports=__ports, global_threads=__api_threads)

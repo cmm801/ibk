@@ -1,27 +1,68 @@
-import contracts
-import orders
-import marketdata
-import account
-import helper
+import constants
+import connect
 
-MKT_DATA_MAX_WAIT_TIME = 60
+MARKETDATA_MAX_WAIT_TIME = 60
 
 
 class Master(object):
     def __init__(self, port):
         super().__init__()
         self._port = port
+        self._connection_info = connect.ConnectionInfo(port)
 
+    def disconnect(self):
+        """ Disconnect from IB Gateway (Reset all connections). """
+        self.reset_connections()
+
+    def reset_connections(self):
+        """ Reset all connections. """
+        self._connection_info.reset_connections()
+        
+    def __del__(self):
+        """ Define the destructor - close all connections. """
+        self.disconnect()
+        
     ##################################################################
     # Contracts
     ##################################################################
 
     def get_contract(self, localSymbol: str):
+        """ Get a Contract object, as specified by its 'localSymbol'.
+        
+            Arguments:
+                localSymbol: (str) a unique symbol specifying the instrument.
+        """
         return self.contracts_app.get_contract(localSymbol=localSymbol)
 
-    def match_contract(self, partial_contract, max_wait_time=contracts.MAX_WAIT_TIME):
-        return self.contracts_app.match_contract(partial_contract=partial_contract,
-                                                 max_wait_time=max_wait_time)
+    def find_matching_contracts(self, max_wait_time=None, **kwargs):
+        """Find a list of matching contracts given some desired attributes.
+
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                        for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (list) a list of ContractDetails objects - one for each
+            possible matching contract.
+        """
+        return self.contracts_app.find_matching_contracts(max_wait_time=max_wait_time, 
+                                                          **kwargs)
+    def find_best_matching_contract(self, max_wait_time=None, **kwargs):
+        """Find 'best' contract among possibilities matching desired attributes.
+
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                        for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (Contract) the 'best' matching Contract object.
+        """
+        return self.contracts_app.find_best_matching_contract(max_wait_time=max_wait_time,
+                                                              **kwargs)
 
     ##################################################################
     # Accounts and Positions
@@ -48,7 +89,7 @@ class Master(object):
 
     def get_market_data_snapshots(self, contractList, fields="", max_wait_time=None):
         if max_wait_time is None:
-            max_wait_time = MKT_DATA_MAX_WAIT_TIME
+            max_wait_time = MARKETDATA_MAX_WAIT_TIME
 
         reqObjList = self.marketdata_app.create_market_data_request(contractList,
                                                                     is_snapshot=True,
@@ -60,7 +101,7 @@ class Master(object):
     def get_historical_data(self, contractList, frequency, use_rth=True, data_type="TRADES",
                             start="", end="", duration="", max_wait_time=None):
         if max_wait_time is None:
-            max_wait_time = MKT_DATA_MAX_WAIT_TIME
+            max_wait_time = MARKETDATA_MAX_WAIT_TIME
 
         reqObjList = self.marketdata_app.create_historical_data_request(contractList,
                                                                         is_snapshot=True,
@@ -142,19 +183,19 @@ class Master(object):
 
     @property
     def contracts_app(self):
-        return contracts.get_instance(port=self._port)
+        return self._connection_info.get_connection(constants.CONTRACTS)
 
     @property
     def orders_app(self):
-        return orders.get_instance(port=self._port)
+        return self._connection_info.get_connection(constants.ORDERS)
 
     @property
     def marketdata_app(self):
-        return marketdata.get_instance(port=self._port)
+        return self._connection_info.get_connection(constants.MARKETDATA)
 
     @property
     def account_app(self):
-        return account.get_instance(port=self._port)
+        return self._connection_info.get_connection(constants.ACCOUNT)
 
     ##################################################################
     # Private functions

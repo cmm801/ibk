@@ -1,5 +1,6 @@
 private_constants.py
 .ipynb_checkpoints/*
-__pycache__/*
+**/__pycache__
+*.pyc
 data/*
 .DS_Store
