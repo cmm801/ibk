@@ -86,19 +86,26 @@ class Master(object):
     ##################################################################
 
     def get_positions(self, include_mv=False):
-        account_app = self.account_app
-        positions_df, contracts = account_app.get_positions()
+        positions_df, contracts = self.account_app.get_positions()
         if include_mv:
             positions_df = self._include_mv_in_positions(positions_df)
         return positions_df, contracts
 
     def get_account_details(self):
-        account_app = self.account_app
-        return account_app.get_account_details()
+        return self.account_app.get_account_details()
 
     def get_total_account_value(self):
-        account_app = self.account_app
-        return account_app.get_total_account_value()
+        return self.account_app.get_total_account_value()
+
+    def get_position_size(self, localSymbol):
+        """ Get the position size for a given local symbol.
+        
+            Returns 0.0 if there is no position in the symbol.
+            Arguments:
+                localSymbol: (str) the unique local string symbol
+                    for the given instrument.
+        """
+        return self.account_app.get_position_size(localSymbol)
 
     ##################################################################
     # Market Data
@@ -153,20 +160,16 @@ class Master(object):
     ##################################################################
 
     def get_saved_orders(self, localSymbol=None):
-        orders_app = self.orders_app
-        return orders_app.get_saved_orders(localSymbol=localSymbol)
+        return self.orders_app.get_saved_orders(localSymbol=localSymbol)
 
     def place_order(self, order_id=None):
-        orders_app = self.orders_app
-        return orders_app.place_order(order_id=order_id)
+        return self.orders_app.place_order(order_id=order_id)
 
     def place_all_orders(self):
-        orders_app = self.orders_app
-        return orders_app.place_all_orders()
+        return self.orders_app.place_all_orders()
 
     def get_open_orders(self):
-        orders_app = self.orders_app
-        return orders_app.get_open_orders()
+        return self.orders_app.get_open_orders()
 
     def create_market_order(self, contract, action, totalQuantity, **kwargs):
         """ Create a market order.

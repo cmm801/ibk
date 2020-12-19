@@ -116,6 +116,10 @@ class AccountTest(unittest.TestCase):
                 self.assertIn(col, acct_df.columns,
                     msg = f'The account details do not include column: {col}')
 
+    def test_get_position_size(self):
+        """ Test the method to 'get_position_size'. """
+        print('Need to implement test for "get_position_size".')
+
 
 if __name__ == '__main__':
     unittest.main()

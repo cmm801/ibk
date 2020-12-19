@@ -85,8 +85,24 @@ class AccountApp(base.BaseApp):
         else:
             return float(acct_info.loc[key, 'value'])
 
-    def position(self, account: str, _contract: ibapi.contract.Contract, position: float,
-                 avgCost: float):
+    def get_position_size(self, localSymbol):
+        """ Get the position size for a given local symbol.
+        
+            Returns 0.0 if there is no position in the symbol.
+            Arguments:
+                localSymbol: (str) the unique local string symbol
+                    for the given instrument.
+        """
+        positions_df, _ = self.get_positions()
+        if localSymbol in positions_df.index:
+            return positions_df.loc[localSymbol, 'size']
+        else:
+            return 0.0        
+        
+    def position(self, account: str, _contract: ibapi.contract.Contract, 
+                 position: float, avgCost: float):
+        """ Callback method from EClient to obtain position info.
+        """
         super().position(account, _contract, position, avgCost)
         self._positions.append({
             'account': account,

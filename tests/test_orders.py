@@ -63,12 +63,15 @@ class OrdersTest(unittest.TestCase):
     
     def test_create_market_order(self):
         # Get the next liquid ES contract
-        _contract = self.app.find_next_live_future(min_days_until_expiry=10, symbol='ES', 
+        _contract = self.app.find_next_live_future(min_days_until_expiry=10, symbol='ES',
                                                    exchange='GLOBEX', currency='USD')
 
         # Get the order information
-        order = self.app.create_market_order(_contract, action='BUY', totalQuantity=1)
+        N = 1
+        mkt_order = self.app.create_market_order(_contract, action='BUY', totalQuantity=N)
         
+        # Find the original position size before trading
+        q_0 = self.get_position_size(_contract.localSymbol)
         
         
         

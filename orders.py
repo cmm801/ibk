@@ -65,25 +65,6 @@ class OrdersApp(base.BaseApp):
                 orders[oid] = order
         return orders
 
-    def place_order(self, order_id=None):
-        """Place a saved order. from a previously created saved order with
-        order_id.
-
-        Arguments:
-        order_id (int): The order_id of a previously created order.
-        """
-        if order_id in self.__saved_orders:
-            self.placeOrder(order_id, self.__saved_orders[order_id]['contract'],
-                            self.__saved_orders[order_id]['order'])
-        del self.__saved_orders[order_id]
-
-    def place_all_orders(self):
-        """Place all the saved orders.
-        """
-        order_ids = list(self.__saved_orders.keys())
-        for order_id in order_ids:
-            self.place_order(order_id=order_id)
-
     def get_open_orders(self, max_wait_time=MAX_WAIT_TIME):
         """Call the IBApi.EClient reqOpenOrders. Open orders are returned via
         the callback openOrder.
@@ -98,23 +79,55 @@ class OrdersApp(base.BaseApp):
 
         return self.__open_orders
 
+    def place_order(self, order_ids):
+        """Place one or more saved orders.
+
+        Arguments:
+            order_ids (list/int): The order_id(s) of previously created order(s).
+        """
+        if not isinstance(order_ids, Iterable):
+            order_ids = [order_ids]
+
+        # Check that all order IDs are unique
+        if len(set(order_ids)) != len(order_ids):
+            raise ValueError('Order IDs must be unique.')
+            
+        # Check that all order IDs are contained in the saved orders
+        saved_orders = self.get_saved_orders()
+        if not np.all([oid in saved_orders for oid in order_ids]):
+            raise ValueError('Some order IDs cannot be found in the saved orders.')
+        
+        # Go through the orders and place them one by one
+        for order_id in order_ids:
+            if order_id in self.__saved_orders:
+                self.placeOrder(order_id, self.__saved_orders[order_id]['contract'],
+                                self.__saved_orders[order_id]['order'])
+
+                # Delete the orders after placing them
+                del self.__saved_orders[order_id]
+
+    def place_all_orders(self):
+        """Place all the saved orders.
+        """
+        order_ids = list(self.__saved_orders.keys())
+        for order_id in order_ids:
+            self.place_order(order_id=order_id)
+
     def _append_order(self, _order):
         self.__open_orders.append(_order)
 
     def _update_saved_orders(self, _order):
         self.__saved_orders.update(_order)
-        
-    def create_market_order(self, contract, action, totalQuantity, **kwargs):
-        """ Create a market order.
+
+    def create_order(self, contract, action, totalQuantity, orderType, **kwargs):
+        """ Create a generic order.
 
             Arguments:
                 contract (Contract): Contract object to be traded
                 action (str): "BUY" | "SELL"
-                totalQuantity (float): Order quantity (units of the contract).        
+                totalQuantity (float): Order quantity (units of the contract).   
+                orderType (str): Type of order - 'MKT', 'LMT', etc.
         """
-        if 'orderType' in kwargs and kwargs['orderType'] != 'MKT':
-            raise ValueError(f'Expected "orderType" to be "MKT" but instead found: {orderType}')
-
         # Get the next order ID
         orderId = self._get_next_order_id()
         
@@ -136,6 +149,20 @@ class OrdersApp(base.BaseApp):
         new_order = {orderId : {"order": _order, "contract": contract}}
         self._update_saved_orders(new_order)
         return new_order
+    
+    def create_market_order(self, contract, action, totalQuantity, **kwargs):
+        """ Create a market order.
+
+            Arguments:
+                contract (Contract): Contract object to be traded
+                action (str): "BUY" | "SELL"
+                totalQuantity (float): Order quantity (units of the contract).        
+        """
+        if 'orderType' in kwargs and kwargs['orderType'] != 'MKT':
+            raise ValueError(f'Expected "orderType" to be "MKT" but instead found: {orderType}')
+
+        # Create a basic Market order
+        return self.create_order(contract, action, totalQuantity, orderType='MKT', **kwargs)
 
     def create_simple_orders(self, req_orders=None, transmit=False):
         """Create orders, but do not place.
