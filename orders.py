@@ -2,74 +2,219 @@
 Module to facilitate trading through Interactive Brokers's API
 see: https://interactivebrokers.github.io/tws-api/index.html
 
-Brent Maranzano
-Dec. 14, 2018
+Christopher Miller
+Dec. 18, 2020
 
 Classes
-    IBClient (EClient): Creates a socket to TWS or IBGateway, and handles
-        sending commands to IB through the socket.
-    IBWrapper (EWrapper): Hanldes the incoming data from IB. Many of these
-        methods are callbacks from the request commands.
-    IBApp (IBWrapper, IBClilent): This provides the main functionality. Many
-        of the methods are over-rides of the IBWrapper commands to customize
-        the functionality.
+    OrdersApp (EClient): Inherits from BaseApp, and provides
+        methods for creating and placing orders.
+
 """
+import collections
 import time
 import numpy as np
 import pandas as pd
 
-from ibapi.contract import Contract
-from ibapi.common import OrderId
-from ibapi.order import Order
-from ibapi.order_state import OrderState
+import ibapi.order
 import base
 
-
 MAX_WAIT_TIME = 5     # max time to wait for TWS response (in seconds)
+
+STATUS_NOT_PLACED = 'not_placed'
+STATUS_PLACED = 'placed'
+STATUS_FILLED = 'filled'
+STATUS_CANCELLED = 'cancelled'
+STATUS_INCOMPATIBLE = 'incompatible'
+
+# Define a class to handle a single order
+class SingleOrder():
+    def __init__(self, contract, order, app=None):
+        # Initially set 'status' flag to 'not submitted'
+        self.status = STATUS_NOT_PLACED
+        
+        # Set the other input variables
+        self.app = app
+        self.contract = contract
+        self.order = order
+
+    @property
+    def order_id(self):
+        return self.order.orderId
+    
+    @property
+    def single_orders(self):
+        """ Auxiliary method to enable compatibility with OrderGroup. """
+        return [self]
+
+    def place(self):
+        """ Place the order.
+        """
+        self.app.placeOrder(self.order_id, self.contract, self.order)
+        
+        # Update the status after placing the order
+        self.status = STATUS_PLACED 
+    
+    def cancel(self):
+        """ Cancel the order (if placed).
+        """
+        if self.status == STATUS_PLACED:
+            self.app.placeOrder(self.order_id, self.contract, self.order)
+
+            # Update the status after cancelling the order
+            self.status = STATUS_PLACED 
+        else:
+            raise ValueError('Cannot cancel an order unless its status is "STATUS_PLACED".')
+
+    def _is_compatible(self, other):
+        """ Check if two different class objects can be combined. """
+        return self.status == other.status
+
+    def __add__(self, other):
+        if not self._is_compatible(other):
+            raise ValueError('The two instances are incompatible for being combined.')
+        else:
+            return self.to_group() + other.to_group()
+
+    def to_group(self):
+        """ Cast SingleOrder to OrderGroup. """
+        return OrderGroup.from_single_orders(self)
+        
+
+# Define a class to handle one or more orders
+class OrderGroup():
+    def __init__(self, contracts=None, orders=None, app=None):        
+        self._single_orders = []
+
+        if contracts is not None or orders is not None:
+            if not isinstance(contracts, collections.Iterable):
+                contracts = [contracts]
+
+            if not isinstance(orders, collections.Iterable):
+                orders = [orders]
+                
+            # Create SingleOrder objects for each order and add them
+            #    to a list
+            sng_ords = []
+            for idx, ct in enumerate(contracts):
+                sng_ord = SingleOrder(ct, orders[idx], app=app)
+                sng_ords.append(sng_ord)
+                
+            # Set the single orders
+            self.single_orders = sng_ords
+
+    @property
+    def single_orders(self):
+        return self._single_orders
+
+    @single_orders.setter
+    def single_orders(self, sng_ords):
+        """ Set the single_orders variable. Enforce uniqueness of order_ids.
+        """
+        # Check that all order IDs are unique
+        oids = [so.order.orderId for so in sng_ords]
+        if len(set(oids)) != len(oids):
+            raise ValueError('Order Ids must all be unique.')
+        else:
+            self._single_orders = sng_ords
+    
+    @property
+    def contracts(self):
+        return [sng_ord.contract for sng_ord in self.single_orders]
+
+    @property
+    def orders(self):
+        return [sng_ord.order for sng_ord in self.single_orders]
+
+    @property
+    def order_ids(self):
+        return [sng_ord.order_id for sng_ord in self.single_orders]
+
+    @property
+    def status(self):
+        order_status = list(set([sng_ord.status for sng_ord in self.single_orders]))
+        if len(order_status) == 1:
+            return order_status[0]
+        else:
+            return STATUS_INCOMPATIBLE
+
+    def place(self):
+        """ Place all orders in the group.
+        """
+        # Go through the orders and place them one by one
+        for sng_ord in self.single_orders:
+            sng_ord.place()
+
+    def cancel(self):
+        """ Cancel all orders in the group.
+        """
+        # Go through the orders and cancel them one by one
+        for sng_ord in self.single_orders:
+            try:
+                sng_ord.cancel()
+            except:
+                print('Failed to cancel order: {}'.format(sng_ord))
+
+    def _is_compatible(self, other):
+        """ Check if two different class objects can be combined. """
+        return self.status == other.status
+
+    def __add__(self, other):
+        if not self._is_compatible(other):
+            raise ValueError('The two instances are incompatible for being combined.')
+        else:
+            single_orders = self.single_orders + other.single_orders
+            return OrderGroup.from_single_orders(single_orders)
+
+    def add(self, other):
+        """ Add new SingleOrder or OrderGroup objects to the existing object.
+        """
+        # Make sure we are working with OrderGroup objects
+        if isinstance(other, SingleOrder):
+            other = other.to_group()
+            
+        if not self._is_compatible(other):
+            raise ValueError('The two instances are incompatible for being combined.')
+        elif set(self.order_ids) & set(other.order_ids):
+            raise ValueError('Cannot add repeated order Ids to the object.')
+        else:
+            self.single_orders.extend(other.single_orders)
+            
+    @classmethod
+    def from_single_orders(cls, single_orders):
+        new_obj = OrderGroup()
+        if isinstance(single_orders, SingleOrder):
+            new_obj.single_orders = [single_orders]
+        else:
+            new_obj.single_orders = single_orders
+
+        return new_obj
+    
+    def to_group(self):
+        """ Auxiliary method to enable compatibility with SingleOrder. """        
+        return self
 
 
 class OrdersApp(base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
-
-    class variables:
-    saved_contracts (dict): keys are symbols, values are dictionaries of
-        information to uniquely define a contract used for stock trading.
-        {symbol: {'contract_info_dictionary'}}
-    saved_orders (dict): keys are order ids, values are Order, Contract
-        {id: {order: Order, contract: Contract}}
-    TODO
-    positions
     """
     def __init__(self):
         super().__init__()
-        self.__saved_orders = {}
-        self.__open_orders = []
-
+        self.__open_orders = {}
+    
     def _get_next_order_id(self):
         """Overload the Base class method to get order ID (the same as the request ID)."""
         return self._get_next_req_id()
 
-    def get_saved_orders(self, localSymbol=None):
-        """Return saved orders for localSymbol. If localSymbol is None
-        return all saved orders.
-
-        Returns (dict) {order_id: {order: order, contract: contract}}
-        """
-        if localSymbol is None:
-            return self.__saved_orders
-
-        orders = dict()
-        for oid, order in self.__saved_orders.items():
-            if order['contract'].localSymbol == localSymbol:
-                orders[oid] = order
-        return orders
+    @property
+    def open_orders(self):
+        return self.get_open_orders()
 
     def get_open_orders(self, max_wait_time=MAX_WAIT_TIME):
         """Call the IBApi.EClient reqOpenOrders. Open orders are returned via
         the callback openOrder.
         """
-        self.__open_orders = []
+        self.__open_orders = {}
         self._open_order_request_complete = False
         self.reqOpenOrders()
 
@@ -79,45 +224,28 @@ class OrdersApp(base.BaseApp):
 
         return self.__open_orders
 
-    def place_order(self, order_ids):
-        """Place one or more saved orders.
+    def cancel_orders(self, order_ids):
+        """Cancel one or more open orders.
 
         Arguments:
-            order_ids (list/int): The order_id(s) of previously created order(s).
+            order_ids (list/int): The order_id(s) of previously open order(s).
         """
-        if not isinstance(order_ids, Iterable):
+        if not isinstance(order_ids, collections.Iterable):
             order_ids = [order_ids]
 
         # Check that all order IDs are unique
         if len(set(order_ids)) != len(order_ids):
             raise ValueError('Order IDs must be unique.')
-            
-        # Check that all order IDs are contained in the saved orders
-        saved_orders = self.get_saved_orders()
-        if not np.all([oid in saved_orders for oid in order_ids]):
-            raise ValueError('Some order IDs cannot be found in the saved orders.')
         
-        # Go through the orders and place them one by one
+        # Go through the orders and cancel them one by one
         for order_id in order_ids:
-            if order_id in self.__saved_orders:
-                self.placeOrder(order_id, self.__saved_orders[order_id]['contract'],
-                                self.__saved_orders[order_id]['order'])
+            # Use the method inherited from IB EClient
+            self.cancelOrder(order_id)
 
-                # Delete the orders after placing them
-                del self.__saved_orders[order_id]
-
-    def place_all_orders(self):
-        """Place all the saved orders.
-        """
-        order_ids = list(self.__saved_orders.keys())
-        for order_id in order_ids:
-            self.place_order(order_id=order_id)
-
-    def _append_order(self, _order):
-        self.__open_orders.append(_order)
-
-    def _update_saved_orders(self, _order):
-        self.__saved_orders.update(_order)
+    def cancel_all_orders(self):
+        """ Cancel all open orders. """
+        # Use method inherited from IB EClient
+        self.reqGlobalCancel()
 
     def create_order(self, contract, action, totalQuantity, orderType, **kwargs):
         """ Create a generic order.
@@ -132,24 +260,24 @@ class OrdersApp(base.BaseApp):
         orderId = self._get_next_order_id()
         
         # Create an Order object with the minimal set of variables
-        _order = Order()
+        _order = ibapi.order.Order()
         _order.orderId = orderId
         _order.action = action
         _order.totalQuantity = totalQuantity
-        _order.orderType = 'MKT'
+        _order.orderType = orderType
 
         # Set any additional specifications in the Order
         for key, val in kwargs.items():
             if not hasattr(_order, key):
                 raise ValueError(f'Unsupported Order variable name was provided: {key}')
+            elif val is None:                
+                pass # keep the default values in this case
             else:
                 _order.__setattr__(key, val)
         
-        # Save the new order
-        new_order = {orderId : {"order": _order, "contract": contract}}
-        self._update_saved_orders(new_order)
-        return new_order
-    
+        # Return the new order
+        return OrderGroup(contract, _order, app=self)
+
     def create_market_order(self, contract, action, totalQuantity, **kwargs):
         """ Create a market order.
 
@@ -158,124 +286,83 @@ class OrdersApp(base.BaseApp):
                 action (str): "BUY" | "SELL"
                 totalQuantity (float): Order quantity (units of the contract).        
         """
-        if 'orderType' in kwargs and kwargs['orderType'] != 'MKT':
-            raise ValueError(f'Expected "orderType" to be "MKT" but instead found: {orderType}')
+        if 'orderType' in kwargs:
+            if kwargs['orderType'] != 'MKT':
+                raise ValueError(f'Expected "orderType" to be "MKT" but instead found: {orderType}')
+            else:
+                del kwargs['orderType']
 
         # Create a basic Market order
         return self.create_order(contract, action, totalQuantity, orderType='MKT', **kwargs)
 
-    def create_simple_orders(self, req_orders=None, transmit=False):
+    def create_limit_order(self, contract, action, totalQuantity, lmtPrice, **kwargs):
+        """ Create a limit order.
+
+            Arguments:
+                contract (Contract): Contract object to be traded
+                action (str): "BUY" | "SELL"
+                totalQuantity (float): Order quantity (units of the contract).
+                lmtPrice (float): the limit price.
+        """
+        if 'orderType' in kwargs:
+            if kwargs['orderType'] != 'LMT':
+                raise ValueError(f'Expected "orderType" to be "LMT" but instead found: {orderType}')
+            else:
+                del kwargs['orderType']
+
+        # Create a basic limit order
+        return self.create_order(contract, action, totalQuantity, 
+                                 orderType='LMT', lmtPrice=lmtPrice, **kwargs)
+
+    def create_bracket_order(self, contract, action, totalQuantity, 
+                             profitPrice, stopPrice, orderType='MKT',
+                             lmtPrice=None, transmit=None, outsideRth=None, tif=None):
         """Create orders, but do not place.
 
         Arguments:
         req_orders (list): list of dictionaries - keys are:
             contract (Contract): Contract object to be traded
             action (str): "BUY" | "SELL"
-            price (float): Order set price.
-            quantity (float): Order quantity.
-            outside_rth (bool): outside regular trading hours
-            tif (str): Time in force "DAY" | "GTC"
-            profit_price (float): Price for profit taking
-            stop_price (float): Price for stop loss
+            totalQuantity (float): Order quantity
+            profitPrice (float): price at which to take profit
+            stopPrice (float): price at which to stop loss
+            lmtPrice (float): limit price for the parent leg (if this is a limit order)
+            orderType (str): The type of order for the parent leg ('MKT' or 'LMT')
+
+       NOTE: to get TWS to execute these orders properly, we must have the
+            first two orders with transmit=False, and then when the last order
+            goes to TWS, it uses the 'transmit' flag on this last order to properly
+            handle the order group.
+            
         """
-        new_orders = dict()
-        for req_order in req_orders:
-            order_id = self._get_next_order_id()
-            _order = Order()
-            _order.orderId = order_id
-            _order.action = req_order['action']
-            _order.orderType = req_order['orderType']
-            _order.totalQuantity = req_order['quantity']
-            _order.lmtPrice = req_order['price']
-            _order.outsideRth = req_order['outside_rth']
-            _order.tif = req_order['tif']
-            _order.transmit = transmit
+        if orderType == 'LMT' and lmtPrice is None:
+            raise ValueError('Must specify "lmtPrice" when orderType is "LMT".')
 
-            new_orders[order_id] = {
-                "order": _order,
-                "contract": req_order['contract'],
-            }
+        # Create parent order
+        parent = self.create_order(contract, action, totalQuantity,
+                                   orderType=orderType, lmtPrice=lmtPrice, 
+                                   transmit=False, outsideRth=outsideRth, tif=tif)
 
-            self._update_saved_orders(new_orders)
-            return new_orders
+        # Create profit-taker leg
+        profit_action = "SELL" if (req_order['action'] == "BUY") else "BUY"
+        profit_leg = self.create_order(contract, profit_action, totalQuantity, 
+                                       orderType='LMT', lmtPrice=profitPrice,
+                                       transmit=False, outsideRth=outsideRth, tif=tif,
+                                       parentId=parent.orderId)
 
-    def create_bracket_orders(self, req_orders=None, transmit=False):
-        """Create orders, but do not place.
-           NOTE: to get TWS to execute these orders properly, we must have the
-                first two orders with transmit=False, and then when the last order
-                goes to TWS, it uses the 'transmit' flag on this last order to properly
-                handle the order group.
+        # Create stop-loss leg
+        loss_action = "SELL" if (req_order['action'] == "BUY") else "BUY"
+        loss_leg = self.create_order(contract, loss_action, totalQuantity,
+                                     orderType='STP', auxPrice=stopPrice,
+                                     transmit=transmit, outsideRth=outsideRth, tif=tif,
+                                     parentId=parent.orderId)
 
-        Arguments:
-        req_orders (list): list of dictionaries - keys are:
-            contract (Contract): Contract object to be traded
-            action (str): "BUY" | "SELL"
-            price (float): Order set price.
-            quantity (float): Order quantity.
-            outside_rth (bool): outside regular trading hours
-            tif (str): Time in force "DAY" | "GTC"
-            profit_price (float): Price for profit taking
-            stop_price (float): Price for stop loss
-            parent_id (int): Id of parent trade.
-        """
-        new_orders = dict()
-        for req_order in req_orders:
-            # Create the parent order
-            order_id = self._get_next_order_id()
-            parent = Order()
-            parent.orderId = order_id
-            parent.action = req_order['action']
-            parent.orderType = "LMT"
-            parent.totalQuantity = req_order['quantity']
-            parent.lmtPrice = req_order['price']
-            parent.outsideRth = req_order['outside_rth']
-            parent.tif = req_order['tif']
-            parent.transmit = False
+        # Return a list with the orders
+        return [parent, profit_leg, loss_leg]
 
-            new_orders[order_id] = {
-                "order": parent,
-                "contract": req_order['contract'],
-            }
-
-            # Create the profit taker order
-            if req_order['profit_price'] is not None:
-                order_id = self._get_next_order_id()
-                profit_taker = Order()
-                profit_taker.orderId = order_id
-                profit_taker.action = "SELL"\
-                    if req_order['action'] == "BUY" else "BUY"
-                profit_taker.orderType = "LMT"
-                profit_taker.totalQuantity = req_order['quantity']
-                profit_taker.lmtPrice = req_order['profit_price']
-                profit_taker.parentId = parent.orderId
-                profit_taker.transmit = False
-
-                new_orders[order_id] = {
-                    "order": profit_taker,
-                    "contract": req_order['contract'],
-                }
-
-            # Create stop loss order
-            if req_order['stop_price'] is not None:
-                order_id = self._get_next_order_id()
-                stop_loss = Order()
-                stop_loss.orderId = order_id
-                stop_loss.action = "SELL"\
-                    if req_order['action'] == "BUY" else "BUY"
-                stop_loss.orderType = "STP"
-                stop_loss.auxPrice = req_order['stop_price']
-                stop_loss.totalQuantity = req_order['quantity']
-                stop_loss.parentId = parent.orderId
-                stop_loss.transmit = transmit
-
-                new_orders[order_id] = {
-                    "order": stop_loss,
-                    "contract": req_order['contract'],
-                }
-            self._update_saved_orders(new_orders)
-            return new_orders
-
-    def create_trailing_stop_orders(self, req_orders=None, transmit=False):
+    def create_trailing_stop_order(self, contract, action, totalQuantity, 
+                                   trailStopPrice, trailAmount, lmtPriceOffset,  
+                                   transmit=None, outsideRth=None, tif=None):
         """Create a trailing stop order.
 
         Arguments:
@@ -292,32 +379,12 @@ class OrdersApp(base.BaseApp):
             tif (str): Time in force "DAY" | "GTC"
             parent_id (int): Id of parent trade.
         """
-        new_orders = dict()
-        for req_order in req_orders:
-            # Create the order
-            order_id = self._get_next_order_id()
-            order = Order()
-            order.orderId = order_id
-            order.action = req_order['action']
-            order.orderType = "TRAIL LIMIT"
-            order.totalQuantity = req_order['quantity']
-            order.trailStopPrice = req_order['trail_stop_price']
-            order.auxPrice = req_order['trail_amount']
-            order.lmtPriceOffset = req_order['limit_offset']
-            order.outsideRth = req_order['outside_rth']
-            order.tif = req_order['tif']
-            order.transmit = transmit
-            # TODO parent_id
+        return self.create_order(contract, action, totalQuantity,
+                                 orderType="TRAIL LIMIT", lmtPriceOffset=lmtPriceOffset,
+                                 trailStopPrice=trailStopPrice, auxPrice=trailAmount,
+                                 transmit=False, outsideRth=outsideRth, tif=tif)
 
-            new_orders[order_id] = {
-                "order": order,
-                "contract": req_order['contract'],
-            }
-
-            self._update_saved_orders(new_orders)
-            return new_orders
-
-    def create_stop_limit_orders(self, req_orders=None, transmit=False):
+    def create_stop_limit_order(self, req_orders=None, transmit=False):
         """Create a stop limit order.
 
         Arguments:
@@ -331,164 +398,38 @@ class OrdersApp(base.BaseApp):
             tif (str): Time in force "DAY" | "GTC"
             profit_price (float): Profit taking price.
         """
-        new_orders = dict()
-        for req_order in req_orders:
-            # Create the order
-            order_id = self._get_next_order_id()
-            order = Order()
-            order.orderId = order_id
-            order.action = req_order['action']
-            order.orderType = "STP LMT"
-            order.totalQuantity = req_order['quantity']
-            order.lmtPrice = req_order['limit_price']
-            order.auxPrice = req_order['stop_price']
-            order.outsideRth = req_order['outside_rth']
-            order.tif = req_order['tif']
-            order.transmit = transmit
+        if orderType == 'LMT' and lmtPrice is None:
+            raise ValueError('Must specify "lmtPrice" when orderType is "LMT".')
 
-            new_orders[order_id] = {
-                "order": order,
-                "contract": req_order['contract'],
-            }
+        # Create parent order
+        parent = self.create_order(contract, action, totalQuantity,
+                                   orderType="STP LMT", lmtPrice=lmtPrice, auxPrice=stopPrice,
+                                   transmit=False, outsideRth=outsideRth, tif=tif)
 
-            # Create the profit taker order
-            if req_order['profit_price'] is not None:
-                profit_taker_order_id = self._get_next_order_id()
-                profit_taker = Order()
-                profit_taker.orderId = profit_taker_order_id
-                profit_taker.action = "SELL"\
-                    if req_order['action'] == "BUY" else "BUY"
-                profit_taker.orderType = "LMT"
-                profit_taker.totalQuantity = req_order['quantity']
-                profit_taker.lmtPrice = req_order['profit_price']
-                profit_taker.parentId = order.orderId
-                profit_taker.transmit = transmit
+        # Create profit-taker leg
+        profit_action = "SELL" if (req_order['action'] == "BUY") else "BUY"
+        profit_leg = self.create_order(contract, profit_action, totalQuantity, 
+                                       orderType='LMT', lmtPrice=profitPrice,
+                                       transmit=False, outsideRth=outsideRth, tif=tif,
+                                       parentId=parent.orderId)
 
-                new_orders[profit_taker_order_id] = {
-                    "order": profit_taker,
-                    "contract": req_order['contract']
-                }
+        # Return a list with the orders
+        return [parent, profit_leg]
 
-            self._update_saved_orders(new_orders)
-            return new_orders
+    def _update_open_orders(self, _order):
+        self.__open_orders[_order.order_id] = _order
 
-    def create_pegged_orders(self, req_orders=None, transmit=False):
-        """Create a pegged to bench mark order.
-
-        Arguments:
-        req_orders (list): list of dictionaries - keys are:
-            contract (Contract): Contract object to be traded
-            action (str): "BUY" | "SELL"
-            quantity (float): Order quantity.
-            starting_price (float): Order starting price.
-            outside_rth (bool): outside regular trading hours
-            tif (str): Time in force "DAY" | "GTC"
-            peg_change_amount (float): Change of price for the target
-            ref_change_amount (float): Change of price of the reference
-            ref_contract_id (int): Contract ID of the reference
-                SPY: ConID: 756733, exchange: ARCA
-                QQQ: ConID: 320227571, exchange: NASDAQ
-            ref_exchange (str): Exchange of the reference
-            ref_price (float): Start price of the reference
-            ref_lower_price (float): Lower ref price allowed
-            ref_upper_price (float): Upper ref price allowed
-        """
-        new_orders = dict()
-        for req_order in req_orders:
-            # Create the parent order
-            order_id = self._get_next_order_id()
-            order = Order()
-            order.orderId = order_id
-            order.orderType = "PEG BENCH"
-            order.action = req_order['action']
-            order.totalQuantity = req_order['quantity']
-            order.startingPrice = req_order['starting_price']
-            order.isPeggedChangeAmountDecrease = False
-            order.peggedChangeAmount = req_order['peg_change_amount']
-            order.referenceChangeAmount = req_order['ref_change_amount']
-            order.referenceContractId = req_order['ref_contract_id']
-            order.referenceExchange = req_order['ref_exchange']
-            order.stockRefPrice = req_order['ref_price']
-            order.stockRangeLower = req_order['ref_lower_price']
-            order.stockRangeUpper = req_order['ref_upper_price']
-            order.transmit = transmit
-
-            new_orders[order_id] = {
-                "order": order,
-                "contract": req_order['contract'],
-            }
-
-            self._update_saved_orders(new_orders)
-            return new_orders
-
-    def quick_bracket(self, symbol=None, action=None, quantity=None, amount=None,
-                         limit_percent=None, profit_percent=None, transmit=False):
-        """Calculate bracket order for symbol using a limit provided by
-        limit_percent.
-
-        Arguments
-        symbol (str): Ticker symbol
-        action (str): "BUY" | "SELL"
-        quantity (int): Number of shares
-        amount (float): Amount in dollars to trade
-        limit_percent (float): Percent change from current quote to set limit.
-        profit_percent (float): Percent change from limit price to take profit.
-
-        Returns (dict) Parameters necessary to place a bracket order.
-        """
-        # Calculate a reasonable change if limit_percent is not given.
-        if limit_percent is None:
-            if action == "BUY":
-                limit_percent = -0.3
-            if action == "SELL":
-                limit_percent = 0.3
-
-        # Calculate a reasonable change if limit_percent is not given.
-        if profit_percent is None:
-            if action == "BUY":
-                profit_percent = 0.3
-            if action == "SELL":
-                profit_percent = -0.3
-
-        # Get the quote
-        raise NotImplementedError('Need to incorporate new market data queries here.')
-        quote = self.get_quotes(symbol).loc[symbol]
-
-        # Calculate the limit price from the limit_percent.
-        limit_price = round(quote * (1 + limit_percent/100.), 2)
-        # Calculate the profit price from the limit_price.
-        profit_price = round(limit_price * (1 + profit_percent/100.), 2)
-
-        # Calculate quantity if amount was provided.
-        if quantity is None:
-            quantity = int(amount / quote)
-
-        req_order = {
-            'symbol': symbol,
-            'action': action,
-            'quantity': quantity,
-            'price': limit_price,
-            'tif': "DAY",
-            'outside_rth': True,
-            'profit_price': profit_price,
-            'stop_price': None
-        }
-
-        self.create_bracket_orders(req_orders=[req_order], transmit=transmit)
-        for order_id in list(self.get_saved_orders(symbol).keys()):
-            self.place_order(order_id=order_id)
-
-    def openOrder(self, orderId: OrderId, contract: Contract, order: Order,
-                  orderState: OrderState):
+    ########################################################################
+    # Implement callback methods
+    ########################################################################
+    
+    def openOrder(self, orderId, contract, order, orderState):
         """Callback from reqOpenOrders(). Method is over-ridden from the
         EWrapper class.
         """
         super().openOrder(orderId, contract, order, orderState)
-        self._append_order({
-                            'order_id': orderId,
-                            'contract': contract,
-                            'order': order
-                          })
+        order_info = OrderGroup(contract, order, app=self)
+        self._update_open_orders(order_info)
 
     def openOrderEnd(self):
         super().openOrderEnd()

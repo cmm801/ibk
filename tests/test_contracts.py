@@ -142,5 +142,34 @@ class ContractsTest(unittest.TestCase):
             self.assertTrue('USD' == _contract.currency, msg='Security type mismatch.')
 
 
+    def test_find_next_live_future(self):
+        """ Check that the next future can be obtained accurately.
+        """            
+        # Get the next liquid ES contract
+        min_days_until_expiry = 10
+        _contract = self.app.find_next_live_future(min_days_until_expiry=min_days_until_expiry, 
+                                                   symbol='ES', exchange='GLOBEX', currency='USD')
+
+        # Check that the contract expiry is in the future
+        expiry_date = pd.Timestamp(_contract.lastTradeDateOrContractMonth)
+        n_days = (expiry_date - pd.Timestamp.now()) / pd.Timedelta(days=1)
+
+        ctr = 0
+        with self.subTest(i=ctr):
+            self.assertGreater(n_days, min_days_until_expiry-1, 
+                               msg='Too few days left until expiry.')
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertLess(n_days, 180, 
+                               msg='Too many days left until expiry.')
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_contract.symbol, 'ES', msg='Unexpected contract symbol.')
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_contract.exchange, 'GLOBEX', msg='Unexpected exchange.')
+            
+            
 if __name__ == '__main__':
     unittest.main()

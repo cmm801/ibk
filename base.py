@@ -81,13 +81,20 @@ class BaseApp(IBWrapper, IBClient):
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
         """
-        super().error(reqId, errorCode, errorString)
         if errorCode == 502:
             msg = ''.join(['A connection could not be established. ',
                            'Check that the correct port has been specified and ',
                            'that the client Id is not already in use.\n',
                            errorString])
             raise connect.ConnectionNotEstablishedError(msg)
+        else:
+            ignorable_error_codes = [2104,  # Market data farm connection is OK 
+                                     2106,  # A historical data farm is connected.
+                                     2158,  # Sec-def data farm connection is OK
+                                    ]
+            
+            if errorCode not in ignorable_error_codes:
+                super().error(reqId, errorCode, errorString)            
 
     def nextValidId(self, reqId: int):
         """Method of EWrapper.

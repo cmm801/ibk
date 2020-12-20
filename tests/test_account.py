@@ -118,7 +118,9 @@ class AccountTest(unittest.TestCase):
 
     def test_get_position_size(self):
         """ Test the method to 'get_position_size'. """
-        print('Need to implement test for "get_position_size".')
+        print('\n###################################################################')
+        print('Need to implement test for "get_position_size" in "test_account.py".')
+        print('###################################################################')
 
 
 if __name__ == '__main__':

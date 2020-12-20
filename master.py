@@ -162,15 +162,27 @@ class Master(object):
     def get_saved_orders(self, localSymbol=None):
         return self.orders_app.get_saved_orders(localSymbol=localSymbol)
 
-    def place_order(self, order_id=None):
-        return self.orders_app.place_order(order_id=order_id)
+    def get_open_orders(self):
+        return self.orders_app.get_open_orders()
+
+    def place_orders(self, order_ids):
+        return self.orders_app.place_orders(order_ids)
 
     def place_all_orders(self):
         return self.orders_app.place_all_orders()
 
-    def get_open_orders(self):
-        return self.orders_app.get_open_orders()
+    def cancel_orders(self, order_ids):
+        return self.orders_app.cancel_orders(order_ids)
+        
+    def cancel_all_orders(self):
+        return self.orders_app.cancel_all_orders()        
 
+    def create_order(self, contract, action, totalQuantity, orderType, **kwargs):
+        """ Create a generic order. """
+        return self.orders_app.create_order(contract, action=action, 
+                                            totalQuantity=totalQuantity,
+                                            orderType=orderType, **kwargs)
+        
     def create_market_order(self, contract, action, totalQuantity, **kwargs):
         """ Create a market order.
 
@@ -181,33 +193,31 @@ class Master(object):
         """
         return self.orders_app.create_market_order(contract, action=action, 
                                                    totalQuantity=totalQuantity, **kwargs)
+        
+    def create_limit_order(self, contract, action, totalQuantity, lmtPrice, **kwargs):
+        """ Create a limit order.
 
-    def create_simple_orders(self, req_orders=None, transmit=False):
-        orders_app = self.orders_app
-        return self.create_simple_orders(req_orders=req_orders, transmit=transmit)
+            Arguments:
+                contract (Contract): Contract object to be traded
+                action (str): "BUY" | "SELL"
+                totalQuantity (float): Order quantity (units of the contract).
+                lmtPrice (float): the limit price
+        """
+        return self.orders_app.create_limit_order(contract, action=action,
+                                                  totalQuantity=totalQuantity, 
+                                                  lmtPrice=lmtPrice, **kwargs)
 
-    def create_bracket_orders(self, req_orders=None, transmit=False):
-        orders_app = self.orders_app
-        return orders_app.create_bracket_orders(req_orders=req_orders, transmit=transmit)
+    def create_bracket_order(self, req_orders=None, transmit=False):
+        return self.orders_app.create_bracket_order(req_orders=req_orders, 
+                                                     transmit=transmit)
 
-    def create_trailing_stop_orders(self, req_orders=None, transmit=False):
-        orders_app = self.orders_app
-        return orders_app.create_trailing_stop_orders(req_orders=req_orders, transmit=transmit)
+    def create_trailing_stop_order(self, req_orders=None, transmit=False):
+        return self.orders_app.create_trailing_stop_order(req_orders=req_orders, 
+                                                           transmit=transmit)
 
-    def create_stop_limit_orders(self, req_orders=None, transmit=False):
-        orders_app = self.orders_app
-        return orders_app.create_stop_limit_orders(req_orders=req_orders, transmit=transmit)
-
-    def create_pegged_orders(self, req_orders=None, transmit=False):
-        orders_app = self.orders_app
-        return orders_app.create_pegged_orders(self, req_orders=req_orders, transmit=transmit)
-
-    def quick_bracket(self, symbol=None, action=None, quantity=None, amount=None,
-                            limit_percent=None, profit_percent=None, transmit=False):
-        orders_app = self.orders_app
-        return orders_app.quick_bracket(symbol=symbol, action=action,
-                    quantity=quantity, amount=amount, limit_percent=limit_percent,
-                    profit_percent=profit_percent, transmit=transmit)
+    def create_stop_limit_order(self, req_orders=None, transmit=False):
+        return self.orders_app.create_stop_limit_order(req_orders=req_orders, 
+                                                        transmit=transmit)
 
     ##################################################################
     # Methods to retrieve specialized helper classes
