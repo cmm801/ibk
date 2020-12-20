@@ -159,17 +159,8 @@ class Master(object):
     # Orders
     ##################################################################
 
-    def get_saved_orders(self, localSymbol=None):
-        return self.orders_app.get_saved_orders(localSymbol=localSymbol)
-
-    def get_open_orders(self):
-        return self.orders_app.get_open_orders()
-
-    def place_orders(self, order_ids):
-        return self.orders_app.place_orders(order_ids)
-
-    def place_all_orders(self):
-        return self.orders_app.place_all_orders()
+    def get_open_orders(self, max_wait_time=None):
+        return self.orders_app.get_open_orders(max_wait_time=max_wait_time)
 
     def cancel_orders(self, order_ids):
         return self.orders_app.cancel_orders(order_ids)

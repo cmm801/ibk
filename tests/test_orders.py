@@ -58,7 +58,7 @@ class OrdersTest(unittest.TestCase):
         # Delete the client
         del cls.app
 
-    def test_get_open_orders(self):
+    def test_place_and_cancel_single_order(self):
         """ Test that we can retrieve open orders.
         """
         # Create a limit order 
@@ -66,16 +66,10 @@ class OrdersTest(unittest.TestCase):
                                                   totalQuantity=3, lmtPrice=1)
         
         # Place the limit order
-        order_id = limit_order.order_id
-        self.app.place_orders(order_id)
+        limit_order.place()
 
-        # Get the open orders - sleep if needed until order propogates
-        t0 = time.time()
-        max_wait_time = 10
-        open_orders = self.app.get_open_orders()
-        while order_id not in open_orders and (time.time() - t0) < max_wait_time:
-            time.sleep(0.5)
-            open_orders = self.app.get_open_orders()
+        # Get the open orders
+        open_orders = self.app.get_open_orders(max_wait_time=10)
 
         # Check that the new order is in the open orders
         self.assertIs(limit_order, open_orders[limit_order.order_id],
@@ -83,6 +77,13 @@ class OrdersTest(unittest.TestCase):
         
         # Clean up by canceling the order
         self.app.cancel_orders(limit_order.order_id)
+
+        # Get the open orders
+        open_orders = self.app.get_open_orders(max_wait_time=10)
+
+        # Check that the new order is in the open orders
+        self.assertTrue(limit_order.order_id in open_orders,
+                msg="The cancelled order is still contained in open orders.")
 
     def test_place_orders(self):
         """ Test that we can place orders.

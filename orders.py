@@ -10,7 +10,6 @@ Classes
         methods for creating and placing orders.
 
 """
-import collections
 import time
 import numpy as np
 import pandas as pd
@@ -78,6 +77,9 @@ class SingleOrder():
         else:
             return self.to_group() + other.to_group()
 
+    def __eq__(self, other):
+        return (str(self.contract) == str(other.contract)) and (str(self.order) == str(other.order))
+        
     def to_group(self):
         """ Cast SingleOrder to OrderGroup. """
         return OrderGroup.from_single_orders(self)
@@ -89,10 +91,10 @@ class OrderGroup():
         self._single_orders = []
 
         if contracts is not None or orders is not None:
-            if not isinstance(contracts, collections.Iterable):
+            if not isinstance(contracts, list):
                 contracts = [contracts]
 
-            if not isinstance(orders, collections.Iterable):
+            if not isinstance(orders, list):
                 orders = [orders]
                 
             # Create SingleOrder objects for each order and add them
@@ -159,12 +161,25 @@ class OrderGroup():
         return self.status == other.status
 
     def __add__(self, other):
+        """ Combine two OrderGroup objects. """
         if not self._is_compatible(other):
             raise ValueError('The two instances are incompatible for being combined.')
         else:
             single_orders = self.single_orders + other.single_orders
             return OrderGroup.from_single_orders(single_orders)
 
+    def __eq__(self, other):
+        """ Check if two OrderGroup objects are equivalent. """
+        res = len(self.single_orders) == len(other.single_orders)
+        res = res and (self.__class__ == other.__class__)
+        if not res:
+            return False
+        else:
+            for idx, _ in enumerate(self.single_orders):
+                if self.single_orders[idx] != other.single_orders[idx]:
+                    return False
+            return True
+            
     def add(self, other):
         """ Add new SingleOrder or OrderGroup objects to the existing object.
         """
@@ -210,10 +225,13 @@ class OrdersApp(base.BaseApp):
     def open_orders(self):
         return self.get_open_orders()
 
-    def get_open_orders(self, max_wait_time=MAX_WAIT_TIME):
+    def get_open_orders(self, max_wait_time=None):
         """Call the IBApi.EClient reqOpenOrders. Open orders are returned via
         the callback openOrder.
         """
+        if max_wait_time is None:
+            max_wait_time = MAX_WAIT_TIME
+        
         self.__open_orders = {}
         self._open_order_request_complete = False
         self.reqOpenOrders()
@@ -230,7 +248,7 @@ class OrdersApp(base.BaseApp):
         Arguments:
             order_ids (list/int): The order_id(s) of previously open order(s).
         """
-        if not isinstance(order_ids, collections.Iterable):
+        if not isinstance(order_ids, list):
             order_ids = [order_ids]
 
         # Check that all order IDs are unique
@@ -258,7 +276,7 @@ class OrdersApp(base.BaseApp):
         """
         # Get the next order ID
         orderId = self._get_next_order_id()
-        
+
         # Create an Order object with the minimal set of variables
         _order = ibapi.order.Order()
         _order.orderId = orderId
@@ -276,7 +294,7 @@ class OrdersApp(base.BaseApp):
                 _order.__setattr__(key, val)
         
         # Return the new order
-        return OrderGroup(contract, _order, app=self)
+        return SingleOrder(contract, _order, app=self)
 
     def create_market_order(self, contract, action, totalQuantity, **kwargs):
         """ Create a market order.
@@ -357,8 +375,8 @@ class OrdersApp(base.BaseApp):
                                      transmit=transmit, outsideRth=outsideRth, tif=tif,
                                      parentId=parent.orderId)
 
-        # Return a list with the orders
-        return [parent, profit_leg, loss_leg]
+        # Return a list with the orders combined into an OrderGroup
+        return (parent + profit_leg) + loss_leg
 
     def create_trailing_stop_order(self, contract, action, totalQuantity, 
                                    trailStopPrice, trailAmount, lmtPriceOffset,  
@@ -414,7 +432,7 @@ class OrdersApp(base.BaseApp):
                                        parentId=parent.orderId)
 
         # Return a list with the orders
-        return [parent, profit_leg]
+        return parent + profit_leg
 
     def _update_open_orders(self, _order):
         self.__open_orders[_order.order_id] = _order
@@ -428,7 +446,7 @@ class OrdersApp(base.BaseApp):
         EWrapper class.
         """
         super().openOrder(orderId, contract, order, orderState)
-        order_info = OrderGroup(contract, order, app=self)
+        order_info = SingleOrder(contract, order, app=self)
         self._update_open_orders(order_info)
 
     def openOrderEnd(self):
