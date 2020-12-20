@@ -27,6 +27,9 @@ class MockApplication():
         
     def placeOrder(self, orderId, contract, order):
         pass
+        
+    def cancelOrder(self, orderId):
+        pass
 
 
 class OrderGroupTest(unittest.TestCase):
@@ -138,13 +141,17 @@ class OrderGroupTest(unittest.TestCase):
         ord_1 = MockOrder(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
 
-        # Place the order
-        so_1.place()
+        with self.subTest(i=0):
+            self.assertEqual(orders.STATUS_NOT_PLACED, so_1.status, msg='Unexpected status.')
 
-        # The two SingleOrder objects have different status flags,
-        #    so when we combine them the status should be 'incompatible'
-        self.assertEqual(orders.STATUS_PLACED, so_1.status, msg='Unexpected status.')
+        with self.subTest(i=1):
+            so_1.place()            
+            self.assertEqual(orders.STATUS_PLACED, so_1.status, msg='Unexpected status.')
 
+        with self.subTest(i=2):
+            with self.assertRaises(ValueError):
+                so_1.place()
+            
     def test_order_group_place_order(self):
         """ Test that we can place an order for a GroupOrder object.
         """
@@ -153,14 +160,73 @@ class OrderGroupTest(unittest.TestCase):
         ord_2 = MockOrder(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
         so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
         so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
-        so_3 = so_1 + so_2
+        group_order = so_1 + so_2
 
-        # Place the order
-        so_3.place()
+        with self.subTest(i=0):
+            self.assertEqual(orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
 
-        # The two SingleOrder objects have different status flags,
-        #    so when we combine them the status should be 'incompatible'
-        self.assertEqual(orders.STATUS_PLACED, so_3.status, msg='Unexpected status.')
+        with self.subTest(i=1):
+            group_order.place()
+            self.assertEqual(orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=2):
+            with self.assertRaises(ValueError):
+                group_order.place()
+
+    def test_single_order_cancel_order(self):
+        """ Test that we can place an order for a SingleOrder object.
+        """
+        mock_app = MockApplication(port=constants.PORT_PAPER)
+        ord_1 = MockOrder(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
+        single_order = orders.SingleOrder('ct_1', ord_1, mock_app)
+
+        with self.subTest(i=0):
+            self.assertEqual(orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=1):
+            with self.assertRaises(ValueError):
+                single_order.cancel()
+
+        with self.subTest(i=2):
+            single_order.place()            
+            self.assertEqual(orders.STATUS_PLACED, single_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=3):
+            single_order.cancel()            
+            self.assertEqual(orders.STATUS_CANCELLED, single_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=4):
+            with self.assertRaises(ValueError):
+                single_order.cancel()
+
+    def test_order_group_cancel_order(self):
+        """ Test that we can place an order for a GroupOrder object.
+        """
+        mock_app = MockApplication(port=constants.PORT_PAPER)
+        ord_1 = MockOrder(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
+        ord_2 = MockOrder(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
+        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
+        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
+        group_order = so_1 + so_2
+
+        with self.subTest(i=0):
+            self.assertEqual(orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=1):
+            with self.assertRaises(ValueError):
+                group_order.cancel()
+
+        with self.subTest(i=2):
+            group_order.place()            
+            self.assertEqual(orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=3):
+            group_order.cancel()            
+            self.assertEqual(orders.STATUS_CANCELLED, group_order.status, msg='Unexpected status.')
+
+        with self.subTest(i=4):
+            with self.assertRaises(ValueError):
+                group_order.cancel()
 
     def test_incompatible_status(self):
         """ Test that we cannot combine objects with different "status" flags.
@@ -173,8 +239,8 @@ class OrderGroupTest(unittest.TestCase):
         so_2.status = orders.STATUS_PLACED
 
         # Check that if the status flags are different, we cannot combine two orders into a GroupOrder
-        self.assertRaises(ValueError, lambda : so_1 + so_2, 
-                          msg='Should not be able to combine orders with different status.')
+        with self.assertRaises(ValueError):
+            so_1 + so_2
 
     def test_incompatible_status(self):
         """ Test that the status flag reveals differences in underlying SingleOrder objects.

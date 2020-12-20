@@ -49,21 +49,24 @@ class SingleOrder():
     def place(self):
         """ Place the order.
         """
-        self.app.placeOrder(self.order_id, self.contract, self.order)
-        
-        # Update the status after placing the order
-        self.status = STATUS_PLACED 
+        if self.status != STATUS_NOT_PLACED:
+            raise ValueError(f'Cannot place an order unless its status is "not_placed".')
+        else:
+            self.app.placeOrder(self.order_id, self.contract, self.order)
+
+            # Update the status after placing the order
+            self.status = STATUS_PLACED
     
     def cancel(self):
         """ Cancel the order (if placed).
         """
-        if self.status == STATUS_PLACED:
+        if self.status != STATUS_PLACED:
+            raise ValueError('Cannot cancel an order unless its status is "placed".')
+        else:
             self.app.placeOrder(self.order_id, self.contract, self.order)
 
             # Update the status after cancelling the order
-            self.status = STATUS_PLACED 
-        else:
-            raise ValueError('Cannot cancel an order unless its status is "STATUS_PLACED".')
+            self.status = STATUS_CANCELLED
 
     def _is_compatible(self, other):
         """ Check if two different class objects can be combined. """
@@ -149,10 +152,7 @@ class OrderGroup():
         """
         # Go through the orders and cancel them one by one
         for sng_ord in self.single_orders:
-            try:
-                sng_ord.cancel()
-            except:
-                print('Failed to cancel order: {}'.format(sng_ord))
+            sng_ord.cancel()
 
     def _is_compatible(self, other):
         """ Check if two different class objects can be combined. """
