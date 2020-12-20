@@ -34,12 +34,13 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can create a SingleOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
-        ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')        
-        single_order = orders.SingleOrder('contract_1', ord_1, mock_app)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
+        ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
+        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertEqual('contract_1', single_order.contract, msg='Contract mismatch.')
+            self.assertEqual(cnt_1, single_order.contract, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
@@ -53,10 +54,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can create an OrderGroup object with multiple contracts/orders.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
+        cnt_2 = self._create_contract(conId=2, symbol='EWJ')        
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
 
-        order_group = orders.OrderGroup(['ct_1', 'ct_2'], [ord_1, ord_2], app=mock_app)
+        order_group = orders.OrderGroup([cnt_1, cnt_2], [ord_1, ord_2], app=mock_app)
         
         ctr = 0
         with self.subTest(i=ctr):
@@ -64,7 +67,7 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(['ct_1', 'ct_2'], order_group.contracts, msg='Contract mismatch.')
+            self.assertEqual([cnt_1, cnt_2], order_group.contracts, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
@@ -83,8 +86,9 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can create an OrderGroup object with a single contract/order.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        order_group = orders.OrderGroup('ct_1', ord_1, app=mock_app)
+        order_group = orders.OrderGroup(cnt_1, ord_1, app=mock_app)
         
         ctr = 0
         with self.subTest(i=ctr):
@@ -92,7 +96,7 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(['ct_1'], order_group.contracts, msg='Contract mismatch.')
+            self.assertEqual([cnt_1], order_group.contracts, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
@@ -111,10 +115,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can combine two SingleOrder objects.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
+        cnt_2 = self._create_contract(conId=2, symbol='EWW')        
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
         so_3 = so_1 + so_2
 
         ctr = 0
@@ -123,7 +129,7 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(['ct_1', 'ct_2'], so_3.contracts, msg='Contract mismatch.')
+            self.assertEqual([cnt_1, cnt_2], so_3.contracts, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
@@ -142,13 +148,14 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can cast a SingleOrder object to an OrderGroup object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')        
-        single_order = orders.SingleOrder('contract_1', ord_1, mock_app)
+        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
         order_group = single_order.to_group()
 
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertEqual(['contract_1'], order_group.contracts, msg='Contract mismatch.')
+            self.assertEqual([cnt_1], order_group.contracts, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
@@ -162,8 +169,9 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can place an order for a SingleOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='ESM0')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         with self.subTest(i=0):
             self.assertEqual(orders.STATUS_NOT_PLACED, so_1.status, msg='Unexpected status.')
@@ -180,10 +188,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can place an order for a GroupOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='GLD')
+        cnt_2 = self._create_contract(conId=2, symbol='VXX')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
         group_order = so_1 + so_2
 
         with self.subTest(i=0):
@@ -201,8 +211,9 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can place an order for a SingleOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        single_order = orders.SingleOrder('ct_1', ord_1, mock_app)
+        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         with self.subTest(i=0):
             self.assertEqual(orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
@@ -227,10 +238,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can place an order for a GroupOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
+        cnt_2 = self._create_contract(conId=2, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
+        ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
         group_order = so_1 + so_2
 
         with self.subTest(i=0):
@@ -256,8 +269,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we cannot combine objects with different "status" flags.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
-        so_1 = orders.SingleOrder('ct_1', 'ord_1', mock_app)
-        so_2 = orders.SingleOrder('ct_2', 'ord_2', mock_app)
+        cnt_1 = self._create_contract(conId=1, symbol='SPY')
+        cnt_2 = self._create_contract(conId=2, symbol='EWJ')
+        ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
+        ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
         
         # Specify that the second order has been placed
         so_2.status = orders.STATUS_PLACED
@@ -270,10 +287,12 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that the status flag reveals differences in underlying SingleOrder objects.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12, symbol='SPY')
+        cnt_2 = self._create_contract(conId=22, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
         so_3 = so_1 + so_2
 
         # Place the order
@@ -287,8 +306,9 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can create a GroupOrder from a SingleOrder object.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=123, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        single_order = orders.SingleOrder('ct_1', ord_1, mock_app)
+        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
         
         # Place the order
         single_order.place()
@@ -302,7 +322,7 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(['ct_1'], order_group.contracts, msg='Contract mismatch.')
+            self.assertEqual([cnt_1], order_group.contracts, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):
@@ -316,14 +336,18 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we can combine SingleOrder and OrderGroup objects using "+".
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12, symbol='SPY')
+        cnt_2 = self._create_contract(conId=22, symbol='EWJ')
+        cnt_3 = self._create_contract(conId=1221, symbol='GLD')
+        cnt_4 = self._create_contract(conId=22166, symbol='VXX')        
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
-        so_3 = orders.SingleOrder('ct_3', ord_3, mock_app)
-        so_4 = orders.SingleOrder('ct_4', ord_4, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         ctr = 0
         with self.subTest(i=ctr):
@@ -349,14 +373,18 @@ class OrderGroupTest(unittest.TestCase):
         """ Test the "add" method on OrderGroup.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12, symbol='SPY')
+        cnt_2 = self._create_contract(conId=22, symbol='EWJ')
+        cnt_3 = self._create_contract(conId=1221, symbol='GLD')
+        cnt_4 = self._create_contract(conId=22166, symbol='VXX')
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
-        so_3 = orders.SingleOrder('ct_3', ord_3, mock_app)
-        so_4 = orders.SingleOrder('ct_4', ord_4, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         # Create a group from the first order
         order_group = so_1.to_group()
@@ -375,14 +403,18 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we cannot create an OrderGroup with repeated order ids.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12, symbol='SPY')
+        cnt_2 = self._create_contract(conId=22, symbol='EWJ')
+        cnt_3 = self._create_contract(conId=1221, symbol='GLD')
+        cnt_4 = self._create_contract(conId=22166, symbol='VXX')
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
-        so_3 = orders.SingleOrder('ct_3', ord_3, mock_app)
-        so_4 = orders.SingleOrder('ct_4', ord_4, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         # Create a group from the first order
         order_group = (so_1 + so_2) + so_3
@@ -404,13 +436,15 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we compare two SingleOrder objects with '=='.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
+        cnt_2 = self._create_contract(conId=2124142, symbol='IBM')
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
         ord_3 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
-        so_1 = orders.SingleOrder('ct_1', ord_1, mock_app)
-        so_2 = orders.SingleOrder('ct_2', ord_2, mock_app)
-        so_3 = orders.SingleOrder('ct_2', ord_3, mock_app)
-        so_4 = orders.SingleOrder('ct_2', ord_1, mock_app)
+        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = orders.SingleOrder(cnt_2, ord_3, mock_app)
+        so_4 = orders.SingleOrder(cnt_2, ord_1, mock_app)
 
         with self.subTest(i=0):
             self.assertNotEqual(so_1, so_2)
@@ -428,17 +462,19 @@ class OrderGroupTest(unittest.TestCase):
         """ Test that we compare two OrderGroup objects with '=='.
         """
         mock_app = MockApplication(port=constants.PORT_PAPER)
+        cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
+        cnt_2 = self._create_contract(conId=2124142, symbol='IBM')        
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
         ord_3 = self._create_order(orderId=3, action='SELL', totalQuantity=2, orderType='LMT')
 
-        single_0 = orders.SingleOrder('ct_1', ord_2, app=mock_app)
-        group_0 = orders.OrderGroup('ct_1', ord_2, app=mock_app)
-        group_1 = orders.OrderGroup(['ct_1', 'ct_1'], [ord_1, ord_2], app=mock_app)
-        group_2 = orders.OrderGroup(['ct_1', 'ct_1'], [ord_1, ord_2], app=mock_app)
-        group_3 = orders.OrderGroup(['ct_1', 'ct_1'], [ord_2, ord_1], app=mock_app)
-        group_4 = orders.OrderGroup(['ct_3', 'ct_1'], [ord_2, ord_1], app=mock_app)
-        group_5 = orders.OrderGroup(['ct_1', 'ct_1', 'ct_1'], [ord_1, ord_2, ord_3], app=mock_app)
+        single_0 = orders.SingleOrder(cnt_1, ord_2, app=mock_app)
+        group_0 = orders.OrderGroup(cnt_1, ord_2, app=mock_app)
+        group_1 = orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
+        group_2 = orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
+        group_3 = orders.OrderGroup([cnt_1, cnt_1], [ord_2, ord_1], app=mock_app)
+        group_4 = orders.OrderGroup([cnt_2, cnt_1], [ord_2, ord_1], app=mock_app)
+        group_5 = orders.OrderGroup([cnt_1, cnt_1, cnt_1], [ord_1, ord_2, ord_3], app=mock_app)
 
         with self.subTest(i=0):
             self.assertEqual(group_1, group_2)
@@ -479,6 +515,24 @@ class OrderGroupTest(unittest.TestCase):
 
         # Return the Order object
         return _order
+    
+    def _create_contract(self, **kwargs):
+        """ Method to help create Contract objects with some populated variables.
+        """
+        # Create a Contract object
+        _contract = ibapi.contract.Contract()
 
+        # Set any additional specifications in the Contract
+        for key, val in kwargs.items():
+            if not hasattr(_contract, key):
+                raise ValueError(f'Unsupported Contract variable name was provided: {key}')
+            elif val is None:                
+                pass # keep the default values in this case
+            else:
+                _contract.__setattr__(key, val)
+
+        # Return the Order object
+        return _contract
+    
 if __name__ == '__main__':
     unittest.main()

@@ -170,9 +170,38 @@ class OrdersTest(unittest.TestCase):
     def test_cancel_all_orders(self):
         """ Test that we can cancel all open orders.
         """
-        print('\n###################################################################')
-        print('Need to implement test for "cancel_all_orders" in "test_orders.py".')
-        print('###################################################################')
+        # Create an OrderGroup object with 2 orders
+        limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
+                                                  totalQuantity=3, lmtPrice=50)
+        limit_order_2 = self.app.create_limit_order(self.AAPL_contract, action='SELL',
+                                                  totalQuantity=5, lmtPrice=1000)
+        
+        # Place the limit order
+        limit_order_1.place()
+        limit_order_2.place()
+
+        # Get the open orders and wait for cancelled order to propogate
+        open_orders = self.app.get_open_orders()
+
+        # Check that the new order is in the open orders
+        with self.subTest(i=0):
+            self.assertEqual(limit_order_1, open_orders[limit_order_1.order_id],
+                msg="The first open order is not what was expected.")
+
+        with self.subTest(i=1):            
+            self.assertEqual(limit_order_2, open_orders[limit_order_2.order_id],
+                msg="The second open order is not what was expected.")
+
+        # Clean up by canceling all open orders
+        self.app.cancel_all_orders()
+
+        # Get the open orders and wait for cancelled order to propogate
+        order_ids = [limit_order_1.order_id, limit_order_2.order_id]
+        open_orders = self._get_open_orders_wait_for_propogation(order_ids)
+
+        # Check that the order has been cancelled
+        with self.subTest(i=2):
+            self.assertEqual(0, len(open_orders), msg='There should be no open orders.')
 
     def test_create_order_buy(self):
         """ Test that we can create a generic buy order.
@@ -319,7 +348,6 @@ class OrdersTest(unittest.TestCase):
         while any([oid in open_orders for oid in order_ids]) \
               and time.time() - t0 < max_wait_time:
             time.sleep(1)
-            print(time.time() - t0, order_ids, open_orders)
             open_orders = self.app.get_open_orders(max_wait_time=max_wait_time)
 
         # Return the open orders
