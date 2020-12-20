@@ -62,7 +62,7 @@ class SingleOrder():
         if self.status != STATUS_PLACED:
             raise ValueError('Cannot cancel an order unless its status is "placed".')
         else:
-            self.app.placeOrder(self.order_id, self.contract, self.order)
+            self.app.cancelOrder(self.order_id)
 
             # Update the status after cancelling the order
             self.status = STATUS_CANCELLED
@@ -78,7 +78,15 @@ class SingleOrder():
             return self.to_group() + other.to_group()
 
     def __eq__(self, other):
-        return (str(self.contract) == str(other.contract)) and (str(self.order) == str(other.order))
+        res = self.contract.conId == other.contract.conId
+        if not res:
+            return False
+        else:
+            order_attributes = ['orderId', 'action', 'totalQuantity', 'orderType', 'lmtPrice']
+            for attr in order_attributes:
+                if self.order.__getattribute__(attr) != other.order.__getattribute__(attr):
+                    return False
+            return True
         
     def to_group(self):
         """ Cast SingleOrder to OrderGroup. """

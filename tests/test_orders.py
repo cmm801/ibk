@@ -63,7 +63,39 @@ class OrdersTest(unittest.TestCase):
         """
         # Create a limit order 
         limit_order = self.app.create_limit_order(self.AAPL_contract, action='BUY',
-                                                  totalQuantity=3, lmtPrice=1)
+                                                  totalQuantity=3, lmtPrice=50)
+        
+        # Place the order
+        limit_order.place()
+
+        # Get the open orders
+        open_orders = self.app.get_open_orders(max_wait_time=10)
+
+        # Check that the new order is in the open orders
+        with self.subTest(i=0):
+            self.assertEqual(limit_order, open_orders[limit_order.order_id],
+                msg="The open order is not what was expected.")
+        
+        # Cancel the order
+        limit_order.cancel()
+
+        # Get the open orders and wait for cancelled order to propogate
+        open_orders = self._get_open_orders_wait_for_propogation([limit_order.order_id])
+
+        # Check that the order has been cancelled
+        with self.subTest(i=1):        
+            self.assertNotIn(limit_order.order_id, open_orders,
+                msg="The cancelled order is still contained in open orders.")
+
+    def test_place_and_cancel_group_order(self):
+        """ Test that we can retrieve open orders.
+        """
+        # Create an OrderGroup object with 2 orders
+        limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
+                                                  totalQuantity=3, lmtPrice=50)
+        limit_order_2 = self.app.create_limit_order(self.AAPL_contract, action='SELL',
+                                                  totalQuantity=5, lmtPrice=1000)
+        limit_order = limit_order_1 + limit_order_2
         
         # Place the limit order
         limit_order.place()
@@ -72,33 +104,69 @@ class OrdersTest(unittest.TestCase):
         open_orders = self.app.get_open_orders(max_wait_time=10)
 
         # Check that the new order is in the open orders
-        self.assertIs(limit_order, open_orders[limit_order.order_id],
-                msg="The open order is not what was expected.")
-        
+        with self.subTest(i=0):
+            self.assertEqual(limit_order_1, open_orders[limit_order_1.order_id],
+                msg="The first open order is not what was expected.")
+
+        with self.subTest(i=1):            
+            self.assertEqual(limit_order_2, open_orders[limit_order_2.order_id],
+                msg="The second open order is not what was expected.")
+
         # Clean up by canceling the order
-        self.app.cancel_orders(limit_order.order_id)
+        limit_order.cancel()
+        
+        # Get the open orders and wait for cancelled order to propogate
+        open_orders = self._get_open_orders_wait_for_propogation(limit_order.order_ids)
 
-        # Get the open orders
-        open_orders = self.app.get_open_orders(max_wait_time=10)
+        # Check that the order has been cancelled
+        with self.subTest(i=2):
+            self.assertNotIn(limit_order_1.order_id, open_orders,
+                msg="The first cancelled order is still contained in open orders.")
 
-        # Check that the new order is in the open orders
-        self.assertTrue(limit_order.order_id in open_orders,
-                msg="The cancelled order is still contained in open orders.")
-
-    def test_place_orders(self):
-        """ Test that we can place orders.
-        """
-        print('\n###################################################################')
-        print('Need to implement test for "place_orders" in "test_orders.py".')
-        print('###################################################################')
+        with self.subTest(i=3):
+            self.assertNotIn(limit_order_2.order_id, open_orders,
+                msg="The second cancelled order is still contained in open orders.")
 
     def test_cancel_orders(self):
         """ Test that we can cancel open orders.
         """
-        print('\n###################################################################')
-        print('Need to implement test for "cancel_orders" in "test_orders.py".')
-        print('###################################################################')
-    
+        # Create an OrderGroup object with 2 orders
+        limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
+                                                  totalQuantity=3, lmtPrice=50)
+        limit_order_2 = self.app.create_limit_order(self.AAPL_contract, action='SELL',
+                                                  totalQuantity=5, lmtPrice=1000)
+        limit_order = limit_order_1 + limit_order_2
+        
+        # Place the limit order
+        limit_order.place()
+
+        # Get the open orders and wait for cancelled order to propogate
+        open_orders = self.app.get_open_orders()
+
+        # Check that the new order is in the open orders
+        with self.subTest(i=0):
+            self.assertEqual(limit_order_1, open_orders[limit_order_1.order_id],
+                msg="The first open order is not what was expected.")
+
+        with self.subTest(i=1):            
+            self.assertEqual(limit_order_2, open_orders[limit_order_2.order_id],
+                msg="The second open order is not what was expected.")
+
+        # Clean up by canceling the order
+        self.app.cancel_orders(limit_order.order_ids)
+
+        # Get the open orders and wait for cancelled order to propogate
+        open_orders = self._get_open_orders_wait_for_propogation(limit_order.order_ids)
+
+        # Check that the order has been cancelled
+        with self.subTest(i=2):
+            self.assertNotIn(limit_order_1.order_id, open_orders,
+                msg="The first cancelled order is still contained in open orders.")
+
+        with self.subTest(i=3):
+            self.assertNotIn(limit_order_2.order_id, open_orders,
+                msg="The second cancelled order is still contained in open orders.")
+
     def test_cancel_all_orders(self):
         """ Test that we can cancel all open orders.
         """
@@ -116,24 +184,24 @@ class OrdersTest(unittest.TestCase):
         qty = 3
 
         # Create the order
-        order_group = self.app.create_order(_contract, action=action,
+        single_order = self.app.create_order(_contract, action=action,
                                             totalQuantity=qty, orderType=order_type)
         
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertIs(_contract, order_group.contract, msg='Contract mismatch.')
+            self.assertIs(_contract, single_order.contract, msg='Contract mismatch.')
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(order_type, single_order.order.orderType, msg='Order mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(order_type, order_group.order.orderType, msg='Order mismatch.')
+            self.assertEqual(qty, single_order.order.totalQuantity, msg='Quantity mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(qty, order_group.order.totalQuantity, msg='Quantity mismatch.')
-
-        ctr += 1
-        with self.subTest(i=ctr):        
-            self.assertEqual(action, order_group.order.action, msg='Mismatched action.')
+            self.assertEqual(action, single_order.order.action, msg='Mismatched action.')
 
     def test_create_order_sell(self):
         """ Test that we can create a generic sell order.
@@ -145,24 +213,24 @@ class OrdersTest(unittest.TestCase):
         order_type = 'LMT'
 
         # Create the order
-        order_group = self.app.create_order(_contract, action=action,
+        single_order = self.app.create_order(_contract, action=action,
                                             totalQuantity=qty, orderType=order_type)
         
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertIs(_contract, order_group.contract, msg='Contract mismatch.')
+            self.assertIs(_contract, single_order.contract, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(order_type, order_group.order.orderType, msg='Order mismatch.')
+            self.assertEqual(order_type, single_order.order.orderType, msg='Order mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(qty, order_group.order.totalQuantity, msg='Quantity mismatch.')
+            self.assertEqual(qty, single_order.order.totalQuantity, msg='Quantity mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(action, order_group.order.action, msg='Mismatched action.')
+            self.assertEqual(action, single_order.order.action, msg='Mismatched action.')
 
     def test_create_market_order(self):
         """ Test that we can create a market order.
@@ -173,23 +241,23 @@ class OrdersTest(unittest.TestCase):
         qty = 5
 
         # Create the order
-        order_group = self.app.create_market_order(_contract, action=action, totalQuantity=qty)
+        single_order = self.app.create_market_order(_contract, action=action, totalQuantity=qty)
         
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertIs(_contract, order_group.contract, msg='Contract mismatch.')
+            self.assertIs(_contract, single_order.contract, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual('MKT', order_group.order.orderType, msg='Order mismatch.')
+            self.assertEqual('MKT', single_order.order.orderType, msg='Order mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(qty, order_group.order.totalQuantity, msg='Quantity mismatch.')
+            self.assertEqual(qty, single_order.order.totalQuantity, msg='Quantity mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(action, order_group.order.action, msg='Mismatched action.')
+            self.assertEqual(action, single_order.order.action, msg='Mismatched action.')
 
     def test_create_limit_order(self):
         """ Test that we can create a limit order.
@@ -198,27 +266,27 @@ class OrdersTest(unittest.TestCase):
         _contract = self.AAPL_contract
         action = 'SELL'
         qty = 17
-        limit_price = 22.0
+        limit_price = 50.0
 
         # Create the order
-        order_group = self.app.create_limit_order(_contract, action=action, 
+        single_order = self.app.create_limit_order(_contract, action=action, 
                                                   totalQuantity=qty, lmtPrice=limit_price)
         
         ctr = 0
         with self.subTest(i=ctr):        
-            self.assertIs(_contract, order_group.contract, msg='Contract mismatch.')
+            self.assertIs(_contract, single_order.contract, msg='Contract mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual('LMT', order_group.order.orderType, msg='Order mismatch.')
+            self.assertEqual('LMT', single_order.order.orderType, msg='Order mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(qty, order_group.order.totalQuantity, msg='Quantity mismatch.')
+            self.assertEqual(qty, single_order.order.totalQuantity, msg='Quantity mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(action, order_group.order.action, msg='Mismatched action.')
+            self.assertEqual(action, single_order.order.action, msg='Mismatched action.')
 
     def test_create_bracket_order(self):
         """ Test that we can create bracket orders.
@@ -243,5 +311,20 @@ class OrdersTest(unittest.TestCase):
         print('###################################################################')
 
 
+    def _get_open_orders_wait_for_propogation(self, order_ids, max_wait_time=10):
+        """ Get open orders, but wait as long as necessary for some orders to be cancelled.
+        """
+        open_orders = self.app.get_open_orders(max_wait_time=max_wait_time)
+        t0 = time.time()
+        while any([oid in open_orders for oid in order_ids]) \
+              and time.time() - t0 < max_wait_time:
+            time.sleep(1)
+            print(time.time() - t0, order_ids, open_orders)
+            open_orders = self.app.get_open_orders(max_wait_time=max_wait_time)
+
+        # Return the open orders
+        return open_orders
+
+                                              
 if __name__ == '__main__':
     unittest.main()
