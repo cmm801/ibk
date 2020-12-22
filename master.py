@@ -26,15 +26,23 @@ class Master(object):
     # Contracts
     ##################################################################
 
+    def get_contract_details(self, localSymbol: str):
+        """ Get saved ContractDetails object, as specified by its 'localSymbol'.
+        
+            Arguments:
+                localSymbol: (str) a unique symbol specifying the instrument.
+        """
+        return self.contracts_app.get_contract_details(localSymbol=localSymbol)
+
     def get_contract(self, localSymbol: str):
-        """ Get a Contract object, as specified by its 'localSymbol'.
+        """ Get saved Contract object, as specified by its 'localSymbol'.
         
             Arguments:
                 localSymbol: (str) a unique symbol specifying the instrument.
         """
         return self.contracts_app.get_contract(localSymbol=localSymbol)
 
-    def find_matching_contracts(self, max_wait_time=None, **kwargs):
+    def find_matching_contract_details(self, max_wait_time=None, **kwargs):
         """Find a list of matching contracts given some desired attributes.
 
         Arguments:
@@ -47,9 +55,10 @@ class Master(object):
         Returns: (list) a list of ContractDetails objects - one for each
             possible matching contract.
         """
-        return self.contracts_app.find_matching_contracts(max_wait_time=max_wait_time, **kwargs)
+        return self.contracts_app.find_matching_contract_details(
+                                    max_wait_time=max_wait_time, **kwargs)
 
-    def find_best_matching_contract(self, max_wait_time=None, **kwargs):
+    def find_best_matching_contract_details(self, max_wait_time=None, **kwargs):
         """Find 'best' contract among possibilities matching desired attributes.
 
         Arguments:
@@ -61,10 +70,11 @@ class Master(object):
 
         Returns: (Contract) the 'best' matching Contract object.
         """
-        return self.contracts_app.find_best_matching_contract(max_wait_time=max_wait_time,
-                                                              **kwargs)
+        return self.contracts_app.find_best_matching_contract_details(
+                                        max_wait_time=max_wait_time, **kwargs)
 
-    def find_next_live_future(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+    def find_next_live_future_contract(self, max_wait_time=None, 
+                                       min_days_until_expiry=1, **kwargs):
         """Find the next live contract for a given future.
 
         Arguments:
@@ -78,9 +88,19 @@ class Master(object):
 
         Returns: (Contract) the 'best' matching Contract object.
         """
-        return self.contracts_app.find_next_live_future(max_wait_time=max_wait_time,
+        return self.contracts_app.find_next_live_future_contract(max_wait_time=max_wait_time,
                         min_days_until_expiry=min_days_until_expiry, **kwargs)
 
+    def save_contracts(self):
+        """ Save the cached contract details to file.
+        
+            Calling this method saves the cached contract details
+            to a file, so that they can be reused without querying
+            the IB server. The file containing all of the 
+            contract details is loaded in the __init__ method.
+        """
+        self.contracts_app.save_contracts()
+    
     ##################################################################
     # Accounts and Positions
     ##################################################################

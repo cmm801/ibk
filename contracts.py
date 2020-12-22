@@ -15,7 +15,7 @@ Classes
 """
 import os
 import time
-import json
+import pickle
 import datetime
 import numpy as np
 import pandas as pd
@@ -29,30 +29,179 @@ import constants
 __CLIENT_ID = 127
 MAX_WAIT_TIME = 10  # time in seconds. Large requests are slow
 
-# Declare the path to the file containing saved contract information
-FILENAME_CONTRACTS = os.path.join(constants.IB_PATH, 'contract_file.json')
-
 
 class ContractsApp(base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
 
     class variables:
-    __saved_contracts (dict): keys are symbols, values are dictionaries of
-                information to uniquely define a contract used for trading.
+    _saved_contract_details (dict): keys are symbols, values are ContractDetails
+                objects for a given contract.
     """
     def __init__(self):
         super().__init__()
-        self.__saved_partial_contracts = dict()
-        self.__saved_contracts = dict()
+        self._saved_contract_details = dict()
         self._contract_details = dict()
         self._contract_details_request_complete = dict()
-        self.__market_rule_info = dict()
+        self._market_rule_info = dict()
 
         # Load the saved contracts
-        self._load_contracts(FILENAME_CONTRACTS)
+        self._load_contracts()
 
-    def get_contract_details(self, partial_contract, max_wait_time=None):
+    def get_contract_details(self, localSymbol: str):
+        """ Try to get saved contract details with the specified localSymbol.
+
+            Arguments:
+                localSymbol (str): a string representing the (unique) local
+                            symbol associated with an instrument/contract.
+
+            Returns: (ContractDetails) Matching contract details, or None if no match.
+        """
+        if self.is_saved_contract(localSymbol):
+            return self._saved_contract_details[localSymbol]
+        else:
+            return None
+
+    def get_contract(self, localSymbol: str):
+        """ Try to find a saved contract with the specified localSymbol.
+
+            Arguments:
+                localSymbol (str): a string representing the (unique) local
+                            symbol associated with an instrument/contract.
+
+            Returns: (Contract) Matching contract, or None if no match.
+        """
+        contract_details = self.get_contract_details(localSymbol)
+        if contract_details is None:
+            return None
+        else:
+            return contract_details.contract
+
+    def is_saved_contract(self, localSymbol):
+        return localSymbol in self._saved_contract_details
+        
+    def add_to_saved_contract_details(self, _contract_details_list):
+        if not isinstance(_contract_details_list, list):
+            _contract_details_list = [_contract_details_list]
+
+        for _cd in _contract_details_list:
+            if not isinstance(_cd, ibapi.contract.ContractDetails):
+                raise ValueError(f'Input must be of type ContractDetails, not "{_cd.__class__}"')
+            else:
+                self._cache_contract_details(_cd)
+        
+        # Save the new contract information
+        self.save_contracts()
+
+    def _cache_contract_details(self, _cd):
+        """ Cache a ContractDetails object.
+        """
+        if not isinstance(_cd, ibapi.contract.ContractDetails):
+            raise ValueError(f'Unsupported type: "{_cd.__class__}". Expected ContractDetails.')
+        else:
+            self._saved_contract_details[_cd.contract.localSymbol] = _cd
+        
+    def find_matching_contract_details(self, max_wait_time=None, **kwargs):
+        """Find a list of matching contracts given some desired attributes.
+
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                        for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (list) a list of ContractDetails objects - one for each
+            possible matching contract.
+        """
+        # Create a partially complete Contract object
+        partial_contract = self._create_partial_contract(**kwargs)
+        
+        # Get the details of the matching contracts
+        contract_details = self._request_contract_details(partial_contract,
+                                            max_wait_time=max_wait_time)
+
+        # Return the matching contract details
+        return contract_details
+
+    def find_best_matching_contract_details(self, max_wait_time=None, **kwargs):
+        """Find 'best' contract among possibilities matching desired attributes.
+
+        Arguments:
+            max_wait_time (int): the maximum time (in seconds) to wait
+                        for a response from the IB API
+            kwargs: The key/value pairs of variables that appear in the
+                ibapi.contract.Contract class. The user can specify
+                as many or as few of these as desired.
+
+        Returns: (ContractDetails) the 'best' matching ContractDetails object.
+        """
+        # Create a partially complete Contract object
+        partial_contract = self._create_partial_contract(**kwargs)
+
+        # Find all contracts matching our partial-specified contract
+        contract_details = self.find_matching_contract_details(max_wait_time=max_wait_time, 
+                                                        **kwargs)
+
+        # If there are multiple matches, select the desired contract
+        possible_contracts = [x.contract for x in contract_details]
+        ct = self._select_contract(partial_contract, possible_contracts)
+        if ct is None:
+            s = partial_contract.symbol
+            raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
+        else:
+            # Get the ContractDetails object corresponding to the matched Contract
+            con_ids = [c.conId for c in possible_contracts]
+            idx = con_ids.index(ct.conId)
+            _cd = contract_details[idx]            
+
+            # Cache the results before returning
+            self._cache_contract_details(_cd)
+            return _cd
+
+    def find_next_live_future_contract(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+        """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
+        """
+        sec_type = kwargs.get('secType', 'FUT')
+        if sec_type != 'FUT':
+            raise ValueError(f'Security type is expected to be "FUT", but instead found "{sec_type}".')
+        else:
+            kwargs['secType'] = 'FUT'
+
+        # Get matching contract_details
+        contract_details = self.find_matching_contract_details(
+                max_wait_time=max_wait_time, **kwargs)
+
+        # Find the nearest contract with sufficient days until expiration
+        exp_dates = np.array([pd.Timestamp(c.realExpirationDate).date() for c in contract_details])
+        idx = np.where(exp_dates > pd.Timestamp.now() + pd.DateOffset(days=min_days_until_expiry))[0][0]
+        return contract_details[idx].contract
+
+    def get_market_rule_info(self, rule_ids, max_wait_time=None):
+        """Get market rule information based on rule ids.
+
+           Arguments:
+           rule_ids is a list of integers, representing different rule Ids.
+           max_wait_time is the max time (in seconds) to wait for a response before timing out.
+           """
+        if max_wait_time is None:
+            max_wait_time = MAX_WAIT_TIME
+
+        for rid in set(rule_ids):
+            assert isinstance(rid, int), 'Market rule ids must be integers.'
+            if rid not in self._market_rule_info:
+                self.reqMarketRule(rid)
+
+        is_completed = lambda : all([x in self._market_rule_info for x in set(rule_ids)])
+        t0 = time.time()
+        while not is_completed() and time.time() - t0 < max_wait_time:
+            time.sleep(0.2)
+        if is_completed():
+            return [self._market_rule_info[x] for x in rule_ids]
+        else:
+            raise ValueError('Request has failed.')
+        
+    def _request_contract_details(self, partial_contract, max_wait_time=None):
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.reqContractDetails is called,
         which is over-ridden to save the contracts to a class dictionary.
@@ -81,139 +230,6 @@ class ContractsApp(base.BaseApp):
         while not self._contract_details_request_complete[req_id] and time.time() - t0 < max_wait_time:
             time.sleep(0.2)
         return self._contract_details[req_id]
-
-    def get_contract(self, localSymbol: str):
-        """Try to find a saved contract with the specified localSymbol.
-        Arguments:
-            localSymbol (str): a string representing the (unique) local
-                            symbol associated with an instrument/contract.
-
-        Returns: (Contract) Matching contract, or None if no match.
-        """
-        if self.is_saved_contract(localSymbol):
-            return self.__saved_contracts[localSymbol]
-        else:
-            return None
-
-    def is_saved_contract(self, localSymbol):
-        return localSymbol in self.__saved_contracts
-        
-    def add_to_saved_contracts(self, contractList):
-        for contract in contractList:
-            self.__saved_contracts[contract.localSymbol] = contract
-        self.save_contracts()
-
-    def find_matching_contracts(self, max_wait_time=None, **kwargs):
-        """Find a list of matching contracts given some desired attributes.
-
-        Arguments:
-            max_wait_time (int): the maximum time (in seconds) to wait
-                        for a response from the IB API
-            kwargs: The key/value pairs of variables that appear in the
-                ibapi.contract.Contract class. The user can specify
-                as many or as few of these as desired.
-
-        Returns: (list) a list of ContractDetails objects - one for each
-            possible matching contract.
-        """
-        # Create a partially complete Contract object
-        partial_contract = self._create_partial_contract(**kwargs)
-        
-        # Get the details of the matching contracts
-        contract_details = self.get_contract_details(partial_contract,
-                                        max_wait_time=max_wait_time)
-
-        # Return the matching contract details
-        return contract_details
-
-    def find_best_matching_contract(self, max_wait_time=None, **kwargs):
-        """Find 'best' contract among possibilities matching desired attributes.
-
-        Arguments:
-            max_wait_time (int): the maximum time (in seconds) to wait
-                        for a response from the IB API
-            kwargs: The key/value pairs of variables that appear in the
-                ibapi.contract.Contract class. The user can specify
-                as many or as few of these as desired.
-
-        Returns: (Contract) the 'best' matching Contract object.
-        """
-        # Create a partially complete Contract object
-        partial_contract = self._create_partial_contract(**kwargs)
-
-        # Find all contracts matching our partial-specified contract
-        contract_details = self.find_matching_contracts(max_wait_time=max_wait_time, 
-                                                        **kwargs)
-
-        # If there are multiple matches, select the desired contract
-        possible_contracts = [x.contract for x in contract_details]
-        ct = self._select_contract(partial_contract, possible_contracts)
-        if ct is None:
-            s = partial_contract.symbol
-            raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
-        else:
-            # Cache the results
-            self.__saved_contracts[ct.localSymbol] = ct
-            return ct
-
-    def find_next_live_future(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
-        """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
-        """
-        sec_type = kwargs.get('secType', 'FUT')
-        if sec_type != 'FUT':
-            raise ValueError(f'Security type is expected to be "FUT", but instead found "{sec_type}".')
-        else:
-            kwargs['secType'] = 'FUT'
-
-        # Get matching contracts
-        contracts = self.find_matching_contracts(max_wait_time=max_wait_time, **kwargs)
-
-        # Find the nearest contract with sufficient days until expiration
-        exp_dates = np.array([pd.Timestamp(c.realExpirationDate).date() for c in contracts])
-        idx = np.where(exp_dates > pd.Timestamp.now() + pd.DateOffset(days=min_days_until_expiry))[0][0]
-        return contracts[idx].contract
-
-    def get_market_rule_info(self, rule_ids, max_wait_time=None):
-        """Get market rule information based on rule ids.
-
-           Arguments:
-           rule_ids is a list of integers, representing different rule Ids.
-           max_wait_time is the max time (in seconds) to wait for a response before timing out.
-           """
-        if max_wait_time is None:
-            max_wait_time = MAX_WAIT_TIME
-
-        for rid in set(rule_ids):
-            assert isinstance(rid, int), 'Market rule ids must be integers.'
-            if rid not in self.__market_rule_info:
-                self.reqMarketRule(rid)
-
-        is_completed = lambda : all([x in self.__market_rule_info for x in set(rule_ids)])
-        t0 = time.time()
-        while not is_completed() and time.time() - t0 < max_wait_time:
-            time.sleep(0.2)
-        if is_completed():
-            return [self.__market_rule_info[x] for x in rule_ids]
-        else:
-            raise ValueError('Request has failed.')
-
-    def contractDetails(self, reqId, contractDetailsObject):
-        """Callback from reqContractDetails for non-bond contracts."""
-        super().contractDetails(reqId, contractDetailsObject)
-        self._contract_details[reqId].append(contractDetailsObject)
-
-    def bondContractDetails(self, reqId, contractDetailsObject):
-        """Callback from reqContractDetails, specifically for bond contracts."""
-        super().contractDetails(reqId, contractDetailsObject)
-        self._contract_details[reqId].append(contractDetailsObject)
-
-    def contractDetailsEnd(self, reqId):
-        super().contractDetailsEnd(reqId)
-        self._contract_details_request_complete[reqId] = True
-
-    def marketRule(self, marketRuleId, priceIncrements):
-        super().marketRule(marketRuleId, priceIncrements)
-        self.__market_rule_info[marketRuleId] = priceIncrements
 
     def _create_partial_contract(self, **kwargs):
         """ Create a partial contract from key/value pairs. """
@@ -357,25 +373,11 @@ class ContractsApp(base.BaseApp):
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _load_contracts(self, filename):
-        """Load saved contracts.
+    def _load_contracts(self):
+        """Load saved contracts. 
         """
-        try:
-            with open(filename, mode='r') as file_obj:
-                # Read in all saved contract info
-                contract_info = json.load(file_obj)
-
-                # Loop through the top-level keys, which are instrument tickers
-                for tkr, info in contract_info.items():
-                    # For each ticker, create the Contract object and save it
-                    self.__saved_contracts[tkr] = self._get_contract_from_dict(info)
-                    ct = ibapi.contract.Contract()
-                    for key, val in info.items():
-                        if key != 'conId':
-                            ct.__setattr__(key, val)
-        except FileNotFoundError:
-            print('file not found')
-            pass
+        with open(constants.FILENAME_CONTRACTS, 'rb') as handle:
+            self._saved_contract_details = pickle.load(handle)
 
     def _get_contract_from_dict(self, info):
         """Create a Contract object from a dictionary of keys/values."""
@@ -390,11 +392,15 @@ class ContractsApp(base.BaseApp):
         return self._get_contract_from_dict(ct_dict)
 
     def save_contracts(self, file='contract_file.json', mode='w'):
-        """Save contracts.
+        """ Save the cached contract details to file.
+        
+            Calling this method saves the cached contract details
+            to a file, so that they can be reused without querying
+            the IB server. The file containing all of the 
+            contract details is loaded in the __init__ method.
         """
-        with open(file, mode=mode) as file_obj:
-            contents = {k: v.__dict__ for k, v in self.__saved_contracts.items()}
-            json.dump(contents, file_obj)
+        with open(constants.FILENAME_CONTRACTS, 'wb') as handle:
+            pickle.dump(self._saved_contract_details, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _clean_position_contracts(self, target_contract):
         """Make changes to contracts that are returned from get_positions in
@@ -409,3 +415,26 @@ class ContractsApp(base.BaseApp):
             _contract = self._copy_contract(target_contract)
             _contract.exchange = ''
         return _contract
+
+    ################################################################
+    # Methods for handling response from Server
+    ################################################################
+
+    def contractDetails(self, reqId, contractDetailsObject):
+        """Callback from reqContractDetails for non-bond contracts."""
+        super().contractDetails(reqId, contractDetailsObject)
+        self._contract_details[reqId].append(contractDetailsObject)
+
+    def bondContractDetails(self, reqId, contractDetailsObject):
+        """Callback from reqContractDetails, specifically for bond contracts."""
+        super().contractDetails(reqId, contractDetailsObject)
+        self._contract_details[reqId].append(contractDetailsObject)
+
+    def contractDetailsEnd(self, reqId):
+        super().contractDetailsEnd(reqId)
+        self._contract_details_request_complete[reqId] = True
+
+    def marketRule(self, marketRuleId, priceIncrements):
+        super().marketRule(marketRuleId, priceIncrements)
+        self._market_rule_info[marketRuleId] = priceIncrements
+    

@@ -38,8 +38,8 @@ class OrdersTest(unittest.TestCase):
         cls.app = master.Master(port=PORT)
         
         # Get the next liquid ES contract
-        cls.ES_contract = cls.app.find_next_live_future(min_days_until_expiry=10, symbol='ES',
-                                                          exchange='GLOBEX', currency='USD')
+        cls.ES_contract = cls.app.find_next_live_future_contract(min_days_until_expiry=10,
+                                                symbol='ES', exchange='GLOBEX', currency='USD')
         # Get a contract for Apple stock
         cls.AAPL_contract = cls.app.get_contract('AAPL')
 

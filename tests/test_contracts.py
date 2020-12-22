@@ -45,6 +45,7 @@ class ContractsTest(unittest.TestCase):
         """ Check that we can retrieve a contract.
         """
         _contract = self.app.get_contract('SPX')
+
         ctr = 0
         with self.subTest(i=ctr):        
             self.assertIsInstance(_contract, ibapi.contract.Contract,
@@ -59,6 +60,36 @@ class ContractsTest(unittest.TestCase):
         with self.subTest(i=ctr):
             self.assertEqual(_contract.secType, 'IND',
                 msg="The contract's security type is not expected.")
+
+    def test_get_contract_details_for_index(self):
+        """ Check that we can retrieve a contract.
+        """
+        _cd = self.app.get_contract_details('SPX')
+
+        ctr = 0
+        with self.subTest(i=ctr):        
+            self.assertIsInstance(_cd, ibapi.contract.ContractDetails,
+                msg="The contract is not of type ContractDetails.")
+
+        ctr += 1
+        with self.subTest(i=ctr):        
+            self.assertIsInstance(_cd.contract, ibapi.contract.Contract,
+                msg="The contract is not of type Contract.")
+            
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.contract.localSymbol, 'SPX',
+                msg="The contract's local symbol is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.contract.secType, 'IND',
+                msg="The contract's security type is not expected.")
+            
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.industry, 'Indices',
+                msg="The contract details industry is not expected.")
 
     def test_get_contract_for_stock(self):
         """ Check that we can retrieve a contract.
@@ -84,13 +115,57 @@ class ContractsTest(unittest.TestCase):
             self.assertEqual(_contract.primaryExchange, 'NASDAQ',
                 msg="The contract's primary exchange is not expected.")
 
-    def test_find_matching_contracts_for_stock(self):
+    def test_get_contract_details_for_stock(self):
+        """ Check that we can retrieve a contract.
+        """
+        _cd = self.app.get_contract_details('AA')
+
+        ctr = 0
+        with self.subTest(i=ctr):        
+            self.assertIsInstance(_cd, ibapi.contract.ContractDetails,
+                msg="The contract is not of type ContractDetails.")
+            
+        ctr += 1
+        with self.subTest(i=ctr):        
+            self.assertIsInstance(_cd.contract, ibapi.contract.Contract,
+                msg="The contract is not of type Contract.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.contract.symbol, 'AA',
+                msg="The contract's symbol is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.contract.secType, 'STK',
+                msg="The contract's security type is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.contract.primaryExchange, 'NYSE',
+                msg="The contract's primary exchange is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.industry, 'Basic Materials',
+                msg="The contract's industry is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.category, 'Mining',
+                msg="The contract's category is not expected.")
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertEqual(_cd.marketName, 'AA',
+                msg="The contract's market name is not expected.")
+
+    def test_find_matching_contract_details_for_stock(self):
         """ Check that all retrieved instruments match the requirements.
         """
         # Get the ContractDetails for matching contracts
-        contract_details = self.app.find_matching_contracts(symbol='AAPL', 
-                                                            exchange='SMART', 
-                                                            secType='STK')
+        contract_details = self.app.find_matching_contract_details(symbol='AAPL', 
+                                                exchange='SMART', secType='STK')
         ctr = 0
         with self.subTest(i=ctr):
             self.assertIsInstance(contract_details, list, msg='Expected a list.')
@@ -116,38 +191,47 @@ class ContractsTest(unittest.TestCase):
     def test_find_best_matching_contract_for_stock(self):
         """ Check that the best matching Contract meets the requirements.
         """
-        # Get the best Contract object
-        _contract = self.app.find_best_matching_contract(symbol='IBM', 
-                                                         exchange='SMART', 
-                                                         secType='STK',
-                                                         currency='USD')
+        # Get the best ContractDetails object
+        _cd = self.app.find_best_matching_contract_details(symbol='IBM', 
+                                exchange='SMART', secType='STK', currency='USD')
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(_contract, ibapi.contract.Contract, 
+            self.assertIsInstance(_cd, ibapi.contract.ContractDetails, 
                                   msg='Expected a Contract object.')
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertTrue('IBM' == _contract.symbol, msg='Symbol mismatch.')
+            self.assertTrue('IBM' == _cd.contract.symbol, msg='Symbol mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertTrue('SMART' == _contract.exchange, msg='Exchange mismatch.')
+            self.assertTrue('SMART' == _cd.contract.exchange, msg='Exchange mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertTrue('STK' == _contract.secType, msg='Security type mismatch.')
+            self.assertTrue('STK' == _cd.contract.secType, msg='Security type mismatch.')
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertTrue('USD' == _contract.currency, msg='Security type mismatch.')
+            self.assertTrue('USD' == _cd.contract.currency, msg='Security type mismatch.')
 
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertTrue('Technology' == _cd.industry, msg='Industry mismatch.')
 
-    def test_find_next_live_future(self):
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertTrue('IBM' == _cd.marketName, msg='Market name mismatch.')
+
+        ctr += 1
+        with self.subTest(i=ctr):
+            self.assertTrue('Computers' == _cd.category, msg='Category mismatch.')
+
+    def test_find_next_live_future_contract(self):
         """ Check that the next future can be obtained accurately.
         """            
         # Get the next liquid ES contract
         min_days_until_expiry = 10
-        _contract = self.app.find_next_live_future(min_days_until_expiry=min_days_until_expiry, 
+        _contract = self.app.find_next_live_future_contract(min_days_until_expiry=min_days_until_expiry, 
                                                    symbol='ES', exchange='GLOBEX', currency='USD')
 
         # Check that the contract expiry is in the future
