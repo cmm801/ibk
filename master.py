@@ -111,10 +111,7 @@ class Master(object):
     # Market Data
     ##################################################################
 
-    def get_market_data_snapshots(self, contractList, fields="", max_wait_time=None):
-        if max_wait_time is None:
-            max_wait_time = MARKETDATA_MAX_WAIT_TIME
-
+    def get_market_data_snapshots(self, contractList, fields=""):
         reqObjList = self.marketdata_app.create_market_data_request(contractList,
                                                                     is_snapshot=True,
                                                                     fields=fields)
@@ -123,12 +120,9 @@ class Master(object):
         return reqObjList
 
     def get_historical_data(self, contractList, frequency, use_rth=True, data_type="TRADES",
-                            start="", end="", duration="", max_wait_time=None):
-        if max_wait_time is None:
-            max_wait_time = MARKETDATA_MAX_WAIT_TIME
-
+                            start="", end="", duration="", is_snapshot=True):
         reqObjList = self.marketdata_app.create_historical_data_request(contractList,
-                                                                        is_snapshot=True,
+                                                                        is_snapshot=is_snapshot,
                                                                         frequency=frequency,
                                                                         use_rth=use_rth,
                                                                         data_type=data_type,

@@ -55,6 +55,13 @@ class AccountApp(base.BaseApp):
         if positions_df.shape[0]:
             positions_df.set_index('localSymbol', inplace=True, drop=False)
             positions_df.index.name = 'localSymbol'
+            
+        # Create an empty DataFrame with the correct columns if there are no positions
+        if positions_df.size == 0:
+            positions_df = pd.DataFrame([],
+                                        index=pd.Index([], name='localSymbol'),
+                                        columns=['account', 'localSymbol', 'symbol', 'secType',
+                                                 'size', 'cost', 'totCost', 'multiplier'])
         return positions_df, contracts
 
     def get_account_details(self):

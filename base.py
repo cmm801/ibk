@@ -87,6 +87,16 @@ class BaseApp(IBWrapper, IBClient):
                            'that the client Id is not already in use.\n',
                            errorString])
             raise connect.ConnectionNotEstablishedError(msg)
+        elif errorCode == 200:
+            # This error means that the contract request was ambiguous, 
+            #   and no matching contract could be found. In this case,
+            #   we set the private variables such that the subscriber stops
+            #   searching for matches.
+            self._contract_details_request_complete[reqId] = True
+            self._contract_details[reqId] = []
+        elif errorCode == 321:
+            super().error(reqId, errorCode, errorString)
+            raise ServerValidationError('Validation error returned by server.')
         else:
             ignorable_error_codes = [2104,  # Market data farm connection is OK 
                                      2106,  # A historical data farm is connected.
@@ -94,7 +104,7 @@ class BaseApp(IBWrapper, IBClient):
                                     ]
             
             if errorCode not in ignorable_error_codes:
-                super().error(reqId, errorCode, errorString)            
+                super().error(reqId, errorCode, errorString)
 
     def nextValidId(self, reqId: int):
         """Method of EWrapper.
@@ -124,3 +134,10 @@ class BaseApp(IBWrapper, IBClient):
         current_req_id = self.__req_id
         self.__req_id += 1
         return current_req_id
+
+
+class ServerValidationError(Exception):
+    """ Exception for handling case when the server raises an error while validating the request."""
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(ServerValidationError, self).__init__(message)

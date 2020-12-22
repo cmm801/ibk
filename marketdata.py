@@ -190,6 +190,7 @@ class MarketDataRequest(AbstractDataRequest):
 
     # abstractmethod
     def _request_data(self, req_id):
+        print(self.fields)
         self.parent_app.reqMktData(
                                     reqId=req_id,
                                     contract=self.contract,
@@ -720,14 +721,16 @@ class MarketDataApp(base.BaseApp):
         _kwargs = dict(fields=fields)
         return self._create_data_request(*_args, **_kwargs)
 
-    def create_historical_data_request(self, contractList, is_snapshot, frequency, use_rth=DEFAULT_USE_RTH,
-                                        data_type="TRADES", start="", end="", duration=""):
+    def create_historical_data_request(self, contractList, is_snapshot, frequency,
+                                       use_rth=DEFAULT_USE_RTH, data_type="TRADES",
+                                       start="", end="", duration=""):
         _args = [HistoricalDataRequest, contractList, is_snapshot]
         _kwargs = dict(frequency=frequency, start=start, end=end, duration=duration,
                                                 use_rth=use_rth, data_type=data_type)
         return self._create_data_request(*_args, **_kwargs)
 
-    def create_streaming_bar_data_request(self, contractList, frequency='5s', use_rth=DEFAULT_USE_RTH, data_type="TRADES"):
+    def create_streaming_bar_data_request(self, contractList, frequency='5s', 
+                                          use_rth=DEFAULT_USE_RTH, data_type="TRADES"):
         is_snapshot = False
         _args = [StreamingBarRequest, contractList, is_snapshot]
         _kwargs = dict(frequency=frequency, use_rth=use_rth, data_type=data_type)

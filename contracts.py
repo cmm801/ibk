@@ -45,8 +45,8 @@ class ContractsApp(base.BaseApp):
         super().__init__()
         self.__saved_partial_contracts = dict()
         self.__saved_contracts = dict()
-        self.__contract_details = dict()
-        self.__contract_details_request_complete = dict()
+        self._contract_details = dict()
+        self._contract_details_request_complete = dict()
         self.__market_rule_info = dict()
 
         # Load the saved contracts
@@ -70,17 +70,17 @@ class ContractsApp(base.BaseApp):
         
         # Get the next request ID and initialize data structures to collect the results
         req_id = self._get_next_req_id()
-        self.__contract_details[req_id] = []
-        self.__contract_details_request_complete[req_id] = False
+        self._contract_details[req_id] = []
+        self._contract_details_request_complete[req_id] = False
 
         # Call EWrapper.reqContractDetails to get all partially matching contracts
         self.reqContractDetails(req_id, partial_contract)
 
         # Loop until the server has completed the request.
         t0 = time.time()
-        while not self.__contract_details_request_complete[req_id] and time.time() - t0 < max_wait_time:
+        while not self._contract_details_request_complete[req_id] and time.time() - t0 < max_wait_time:
             time.sleep(0.2)
-        return self.__contract_details[req_id]
+        return self._contract_details[req_id]
 
     def get_contract(self, localSymbol: str):
         """Try to find a saved contract with the specified localSymbol.
@@ -101,7 +101,7 @@ class ContractsApp(base.BaseApp):
     def add_to_saved_contracts(self, contractList):
         for contract in contractList:
             self.__saved_contracts[contract.localSymbol] = contract
-        self._save_contracts()
+        self.save_contracts()
 
     def find_matching_contracts(self, max_wait_time=None, **kwargs):
         """Find a list of matching contracts given some desired attributes.
@@ -200,16 +200,16 @@ class ContractsApp(base.BaseApp):
     def contractDetails(self, reqId, contractDetailsObject):
         """Callback from reqContractDetails for non-bond contracts."""
         super().contractDetails(reqId, contractDetailsObject)
-        self.__contract_details[reqId].append(contractDetailsObject)
+        self._contract_details[reqId].append(contractDetailsObject)
 
     def bondContractDetails(self, reqId, contractDetailsObject):
         """Callback from reqContractDetails, specifically for bond contracts."""
         super().contractDetails(reqId, contractDetailsObject)
-        self.__contract_details[reqId].append(contractDetailsObject)
+        self._contract_details[reqId].append(contractDetailsObject)
 
     def contractDetailsEnd(self, reqId):
         super().contractDetailsEnd(reqId)
-        self.__contract_details_request_complete[reqId] = True
+        self._contract_details_request_complete[reqId] = True
 
     def marketRule(self, marketRuleId, priceIncrements):
         super().marketRule(marketRuleId, priceIncrements)
@@ -250,17 +250,15 @@ class ContractsApp(base.BaseApp):
 
     def _select_equity_contract(self, target_contract, contract_details):
         # Select the proper contract
+        supported_exchanges = ["NYSE", 'NASDAQ', 'AMEX', 'ARCA', 'BATS']
         for contract in contract_details:
             if target_contract.currency == 'USD':
                 # NYSE stock
-                if contract.primaryExchange in ["NYSE", 'ARCA', 'NASDAQ', 'BATS']:
+                pex = contract.primaryExchange
+                if pex in supported_exchanges:
                     return contract
-                # Nasdaq stock
-                elif contract.primaryExchange == "NASDAQ.NMS":
-                    raise ValueError('This branch was created for unknown reasons on the github repo')
-                    # Below is legacy code from the original github
-                    #contract.primaryExchange = "ISLAND"
-                    #return contract
+                else:
+                    raise ValueError(f'Unsupported exchange: {pex}')
             else:
                 raise NotImplemtedError( 'Currently only supported for USD stocks.' )
 
@@ -391,11 +389,11 @@ class ContractsApp(base.BaseApp):
         ct_dict = target_contract.__dict__
         return self._get_contract_from_dict(ct_dict)
 
-    def _save_contracts(self, file='contract_file.json', mode='w'):
+    def save_contracts(self, file='contract_file.json', mode='w'):
         """Save contracts.
         """
         with open(file, mode=mode) as file_obj:
-            contents = { k: v.__dict__ for k, v in self.__saved_contracts.items()}
+            contents = {k: v.__dict__ for k, v in self.__saved_contracts.items()}
             json.dump(contents, file_obj)
 
     def _clean_position_contracts(self, target_contract):
