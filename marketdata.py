@@ -24,7 +24,7 @@ import pytz
 
 from abc import ABC, abstractmethod
 
-from ibapi.contract import Contract
+from ibapi.contract import Contract, ContractDetails
 from ibapi.ticktype import TickTypeEnum
 from ibapi.common import BarData, HistogramDataList, TickerId, TickAttrib
 
@@ -47,19 +47,22 @@ DEFAULT_USE_RTH = False
 # Activate latency monitoring for tests of streaming data
 MONITOR_LATENCY = False
 
+# The number of rows that the market scanner returns by default
+DEFAULT_NUMBER_OF_SCAN_ROWS = 50
+
 
 class DataRequestError(Exception):
     """Exceptions generated during requesting historical market data.
     """
     def __init__(self, *args,**kwargs):
-        super().__init__(*args,**kwargs)
+        super(DataRequestError, self).__init__(*args,**kwargs)
 
 
 class AbstractDataRequest(ABC):
-    def __init__(self, parent_app, contract, is_snapshot, **kwargs):
+    def __init__(self, parent_app, dataObj, is_snapshot, **kwargs):
         self.parent_app = parent_app
         self.is_snapshot = is_snapshot
-        self.contract = contract
+        self.dataObj = dataObj
         self.reset()
 
     def reset(self):
@@ -105,9 +108,6 @@ class AbstractDataRequest(ABC):
             self.__is_request_complete = all([self.parent_app.is_request_complete(req_id) \
                                                   for req_id in req_ids])
         return self.__is_request_complete
-
-    def to_string(self):
-        return pickle.dumps(self, protocol=4)
 
     def get_req_ids(self):
         if all([req_id is None for req_id in self.__req_ids]):
@@ -175,9 +175,80 @@ class AbstractDataRequest(ABC):
         return self.get_subrequests()
 
 
-class MarketDataRequest(AbstractDataRequest):
+class AbstractDataRequestForContract(AbstractDataRequest):
+    """ Overload the AbstractDataRequest object to work with Contract objects.
+    """
+    @property
+    def contract(self):
+        return self.dataObj
+    
+    @contract.setter
+    def contract(self, ct):
+        self.dataObj = ct
+
+
+class ScannerDataRequest(AbstractDataRequest):
+    def __init__(self, parent_app, dataObj, is_snapshot, options=None, filters=None):
+        super(ScannerDataRequest, self).__init__(parent_app, dataObj, is_snapshot)
+        self.options = options
+        self.filters = filters
+
+    @property
+    def scanSubObj(self):
+        return self.dataObj
+    
+    @scanSubObj.setter
+    def scanSubObj(self, scan_obj):
+        self.dataObj = scan_obj
+
+    @property
+    def n_rows(self):
+        N = self.scanSubObj.numberOfRows
+        if N == -1:
+            return DEFAULT_NUMBER_OF_SCAN_ROWS
+
+    # abstractmethod
+    def initialize_data(self):
+        """ Create a list with one element for each ranked instrument.
+        """
+        self._market_data = [{} for _ in range(self.n_rows)]
+
+    # abstractmethod
+    def append_data(self, new_data):
+        self._market_data[new_data['rank']] = new_data
+
+    # abstractmethod
+    def _request_data(self, req_id):
+        print(req_id)
+        # Assemble the arguments for the request
+        args = dict(reqId=req_id,
+                    subscription=self.scanSubObj,
+                    scannerSubscriptionOptions=self.options,
+                    scannerSubscriptionFilterOptions=self.filters)
+            
+        # Make the scanner subscription request
+        self.parent_app.reqScannerSubscription(**args)
+    
+    # abstractmethod
+    def get_data(self):
+        return self._market_data
+
+    def cancel_request(self):
+        """ Method to cancel the scanner subscription.
+        """
+        self._cancelStreamingSubscription()
+
+    # Overload superclass method to cacnel streaming
+    def _cancelStreamingSubscription(self):
+        """ Method to cancel the scanner subscription.
+        """
+        for req_id in self.get_req_ids():
+            self.parent_app.cancelScannerSubscription(req_id)
+
+
+class MarketDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, fields=""):
-        super().__init__(parent_app, contract, is_snapshot)
+        super(MarketDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.fields = fields
 
     # abstractmethod
@@ -190,7 +261,6 @@ class MarketDataRequest(AbstractDataRequest):
 
     # abstractmethod
     def _request_data(self, req_id):
-        print(self.fields)
         self.parent_app.reqMktData(
                                     reqId=req_id,
                                     contract=self.contract,
@@ -209,7 +279,7 @@ class MarketDataRequest(AbstractDataRequest):
             self.parent_app.cancelMktData(req_id)
 
 
-class HistoricalDataRequest(AbstractDataRequest):
+class HistoricalDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, frequency="",
                                  start="", end="",
                                  duration="", use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
@@ -219,7 +289,9 @@ class HistoricalDataRequest(AbstractDataRequest):
         self.frequency = frequency           # e.g., 1s, 1M (1 minute), 1d, 1h, etc.
         self.useRTH = use_rth               # True/False - only return regular trading hours
         self.data_type = data_type           # TRADES, ASK, BID, ASK_BID, etc.
-        super().__init__(parent_app, contract, is_snapshot)
+        
+        # Call the superclass contructor
+        super(HistoricalDataRequest, self).__init__(parent_app, contract, is_snapshot)
 
     # abstractmethod
     def initialize_data(self):
@@ -432,9 +504,9 @@ class HistoricalDataRequest(AbstractDataRequest):
         return df[idx]
 
 
-class StreamingBarRequest(AbstractDataRequest):
+class StreamingBarRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, data_type="TRADES", use_rth=DEFAULT_USE_RTH, frequency='5s'):
-        super().__init__(parent_app, contract, is_snapshot)
+        super(StreamingBarRequest, self).__init__(parent_app, contract, is_snapshot)
         self.frequency = frequency
         self.data_type = data_type
         self.useRTH = use_rth
@@ -482,10 +554,10 @@ class StreamingBarRequest(AbstractDataRequest):
             self.parent_app.cancelRealTimeBars(req_id)
 
 
-class StreamingTickDataRequest(AbstractDataRequest):
+class StreamingTickDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, data_type="Last",
                                      number_of_ticks=0, ignore_size=True):
-        super().__init__(parent_app, contract, is_snapshot)
+        super(StreamingTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.tickType = data_type
         self.numberOfTicks = number_of_ticks
         self.ignoreSize = ignore_size     # Ignore ticks with just size updates (no price chg.)
@@ -525,10 +597,10 @@ class StreamingTickDataRequest(AbstractDataRequest):
             self.parent_app.cancelTickByTickData(req_id)
 
 
-class HistoricalTickDataRequest(AbstractDataRequest):
+class HistoricalTickDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, start="", end="", use_rth=DEFAULT_USE_RTH,
                                  data_type="Last", number_of_ticks=1000, ignore_size=True):
-        super().__init__(parent_app, contract, is_snapshot)
+        super(HistoricalTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.startDateTime = start
         self.endDateTime = end
         self.whatToShow = data_type
@@ -575,11 +647,11 @@ class HistoricalTickDataRequest(AbstractDataRequest):
             self.parent_app.cancelTickByTickData(req_id)
 
 
-class HeadTimeStampDataRequest(AbstractDataRequest):
+class HeadTimeStampDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot=True, data_type='TRADES', use_rth=DEFAULT_USE_RTH):
         self.useRTH = use_rth               # True/False - only return regular trading hours
         self.data_type = data_type           # TRADES, ASK, BID, ASK_BID, etc.
-        super().__init__(parent_app, contract, is_snapshot)
+        super(HeadTimeStampDataRequest, self).__init__(parent_app, contract, is_snapshot)
 
     # abstractmethod
     def initialize_data(self):
@@ -617,7 +689,7 @@ class PacingViolationManager(object):
     _small_bar_market_data_requests = collections.deque(maxlen=TOTAL_REQUESTS_PER_TIME_UNIT[0])
 
     def __init__(self):
-        super().__init__()
+        super(PacingViolationManager, self).__init__()
 
     def manage_request(self, requestObj):
         """ Manage the processing of the request to avoid pacing violations.
@@ -687,7 +759,7 @@ class MarketDataApp(base.BaseApp):
         information to uniquely define a contract used for trading.
     """
     def __init__(self):
-        super().__init__()
+        super(MarketDataApp, self).__init__()
         self._pacing_manager = PacingViolationManager()
         self._requests = dict()
         self._requests_complete = dict()
@@ -704,19 +776,19 @@ class MarketDataApp(base.BaseApp):
     def register_request_complete(self, req_id):
         self._requests_complete[req_id] = datetime.datetime.now()
 
-    def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
-        # Make sure arguments are not included in kwargs
-        kwargs.pop('contractList', None)
-        kwargs.pop('is_snapshot', None)
-
-        # Create a request object for eqch contract
-        requestObjList = []
-        for contract in contractList:
-            request_obj = cls(self, contract, is_snapshot, **kwargs)
-            requestObjList.append(request_obj)
-        return requestObjList
-
     def create_market_data_request(self, contractList, is_snapshot, fields=""):
+        """ Create a MarketDataRequest object for getting  current market data.
+        
+            Arguments:
+                contractList: (list) a list of Contract objects
+                is_snapshot: (bool) if False, then a stream will be opened with 
+                    IB that will continuously update the latest market price info.
+                    If True, then only the latest price info will be returned.
+                fields: (str) additional tick data codes that are requested,
+                    in additional to the default data codes. A list of available
+                    additional tick data codes are available on the IB website.
+        """ 
+        
         _args = [MarketDataRequest, contractList, is_snapshot]
         _kwargs = dict(fields=fields)
         return self._create_data_request(*_args, **_kwargs)
@@ -724,6 +796,8 @@ class MarketDataApp(base.BaseApp):
     def create_historical_data_request(self, contractList, is_snapshot, frequency,
                                        use_rth=DEFAULT_USE_RTH, data_type="TRADES",
                                        start="", end="", duration=""):
+        """ Create a HistoricalDataRequest object for getting historical data.
+        """         
         _args = [HistoricalDataRequest, contractList, is_snapshot]
         _kwargs = dict(frequency=frequency, start=start, end=end, duration=duration,
                                                 use_rth=use_rth, data_type=data_type)
@@ -757,6 +831,10 @@ class MarketDataApp(base.BaseApp):
         _kwargs = dict(use_rth=use_rth, data_type=data_type)
         return self._create_data_request(*_args, **_kwargs)
 
+    def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
+        return ScannerDataRequest(self, scanSubObj, is_snapshot=False, 
+                                  options=options, filters=filters)
+
     def get_histogram(self, contract, period="20d"):
         """Get histograms of the local symbols (the unique IB tickers).
 
@@ -789,70 +867,33 @@ class MarketDataApp(base.BaseApp):
     def is_request_complete(self, req_id):
         return req_id in self._requests_complete
 
-    def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float,
-                              delta: float, optPrice: float, pvDividend: float,
-                              gamma: float, vega: float, theta: float, undPrice: float):
-        raise NotImplementedError('Option market data needs to be implemented.')
+    def get_scanner_parameters(self, max_wait_time=2):
+        self._xml_params = None
+        self.reqScannerParameters()
 
-    def tickPrice(self, tickerId: int, field: int, price: float, attribs: TickAttrib):
-        self._handle_market_data_callback(tickerId, field, price, attribs)
+        # Sleep until the client returns a response
+        t0 = time.time()
+        while self._xml_params is None and t0 < time.time() + max_wait_time:
+            time.sleep(0.1)
 
-    def tickSize(self, tickerId: int, field: int, size: int):
-        self._handle_market_data_callback(tickerId, field, size)
+        # Return the parameters
+        return self._xml_params
 
-    def tickString(self, tickerId: int, field: int, value: str):
-        self._handle_market_data_callback(tickerId, field, value)
+    ##############################################################################
+    # Private methods
+    ##############################################################################
 
-    def tickSnapshotEnd(self, reqId: int):
-        super().tickSnapshotEnd(reqId)
-        self._handle_callback_end(reqId)
+    def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
+        # Make sure arguments are not included in kwargs
+        kwargs.pop('contractList', None)
+        kwargs.pop('is_snapshot', None)
 
-    def historicalData(self, reqId: int, bar: BarData):
-        self._handle_historical_data_callback(reqId, bar, is_update=False)
-
-    def historicalDataUpdate(self, reqId: int, bar: BarData):
-        self._handle_historical_data_callback(reqId, bar, is_update=True)
-
-    def historicalDataEnd(self, reqId: int, start: str, end: str):
-        super().historicalDataEnd(reqId, start, end)
-        self._handle_callback_end(reqId)
-
-    def realtimeBar(self, reqId, date, _open, high, low, close, volume, WAP, count):
-        super().realtimeBar(reqId, date, _open, high, low, close, volume, WAP, count)
-        self._handle_realtimeBar_callback(reqId, date, _open, high, low, close, volume, WAP, count)
-
-    def historicalTicks(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def historicalTicksBidAsk(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def historicalTicksLast(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def tickByTickAllLast(self, reqId, tickType, _time, price, size,
-                          tickAttribLast, exchange, specialConditions):
-        self._handle_tickByTickAllLast_callback(reqId, tickType,
-               _time, price, size, tickAttribLast, exchange, specialConditions)
-
-    def tickByTickBidAsk(self, reqId, _time, bidPrice, askPrice,
-                                         bidSize, askSize, tickAttribBidAsk):
-        self._handle_tickByTickBidAsk_callback(reqId, _time, bidPrice, askPrice,
-                                         bidSize, askSize, tickAttribBidAsk)
-
-    def tickByTickMidPoint(self, reqId, _time, midPoint):
-        self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
-
-    def headTimestamp(self, reqId: int, timestamp: str):
-        self._handle_headtimestamp_data_callback(reqId, timestamp)
-        self._handle_callback_end(reqId)
-        self.cancelHeadTimeStamp(reqId)
-
-    def histogramData(self, reqId: int, items: HistogramDataList):
-        """EWrapper method called from reqHistogramData.
-        http://interactivebrokers.github.io/tws-api/histograms.html
-        """
-        self._histogram = items
+        # Create a request object for eqch contract
+        requestObjList = []
+        for contract in contractList:
+            request_obj = cls(self, contract, is_snapshot, **kwargs)
+            requestObjList.append(request_obj)
+        return requestObjList
 
     def _register_open_stream(self, req_id, requestObj):
         self._open_streams[req_id] = requestObj
@@ -927,3 +968,86 @@ class MarketDataApp(base.BaseApp):
         reqObj = self._get_request_object_from_id(req_id)
         reqObj.append_data(timestamp)
 
+    def _handle_scanner_subscription_data_callback(self, req_id, rank, 
+                   contractDetails, distance, benchmark, projection, legsStr):
+        reqObj = self._get_request_object_from_id(req_id)
+        data = dict(rank=rank, contractDetails=contractDetails, distance=distance,
+                    benchmark=benchmark, projection=projection, legsStr=legsStr)
+        reqObj.append_data(data)
+
+    ##############################################################################
+    # Methods for handling response from the client
+    ##############################################################################
+    
+    def scannerParameters(self, xmlParams):
+        self._xml_params = xmlParams
+
+    def scannerData(self, reqId: int, rank: int, contractDetails: ContractDetails,
+                    distance: str, benchmark: str, projection: str, legsStr: str):
+        self._handle_scanner_subscription_data_callback(reqId, rank, contractDetails,
+                    distance, benchmark, projection, legsStr)
+
+    def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float,
+                              delta: float, optPrice: float, pvDividend: float,
+                              gamma: float, vega: float, theta: float, undPrice: float):
+        raise NotImplementedError('Option market data needs to be implemented.')
+
+    def tickPrice(self, tickerId: int, field: int, price: float, attribs: TickAttrib):
+        self._handle_market_data_callback(tickerId, field, price, attribs)
+
+    def tickSize(self, tickerId: int, field: int, size: int):
+        self._handle_market_data_callback(tickerId, field, size)
+
+    def tickString(self, tickerId: int, field: int, value: str):
+        self._handle_market_data_callback(tickerId, field, value)
+
+    def tickSnapshotEnd(self, reqId: int):
+        super().tickSnapshotEnd(reqId)
+        self._handle_callback_end(reqId)
+
+    def historicalData(self, reqId: int, bar: BarData):
+        self._handle_historical_data_callback(reqId, bar, is_update=False)
+
+    def historicalDataUpdate(self, reqId: int, bar: BarData):
+        self._handle_historical_data_callback(reqId, bar, is_update=True)
+
+    def historicalDataEnd(self, reqId: int, start: str, end: str):
+        super().historicalDataEnd(reqId, start, end)
+        self._handle_callback_end(reqId)
+
+    def realtimeBar(self, reqId, date, _open, high, low, close, volume, WAP, count):
+        super().realtimeBar(reqId, date, _open, high, low, close, volume, WAP, count)
+        self._handle_realtimeBar_callback(reqId, date, _open, high, low, close, volume, WAP, count)
+
+    def historicalTicks(self, reqId: int, ticks, done: bool):
+        self._handle_historical_tick_data_callback(reqId, ticks, done)
+
+    def historicalTicksBidAsk(self, reqId: int, ticks, done: bool):
+        self._handle_historical_tick_data_callback(reqId, ticks, done)
+
+    def historicalTicksLast(self, reqId: int, ticks, done: bool):
+        self._handle_historical_tick_data_callback(reqId, ticks, done)
+
+    def tickByTickAllLast(self, reqId, tickType, _time, price, size,
+                          tickAttribLast, exchange, specialConditions):
+        self._handle_tickByTickAllLast_callback(reqId, tickType,
+               _time, price, size, tickAttribLast, exchange, specialConditions)
+
+    def tickByTickBidAsk(self, reqId, _time, bidPrice, askPrice,
+                                         bidSize, askSize, tickAttribBidAsk):
+        self._handle_tickByTickBidAsk_callback(reqId, _time, bidPrice, askPrice,
+                                         bidSize, askSize, tickAttribBidAsk)
+
+    def tickByTickMidPoint(self, reqId, _time, midPoint):
+        self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
+
+    def headTimestamp(self, reqId: int, timestamp: str):
+        self._handle_headtimestamp_data_callback(reqId, timestamp)
+        self._handle_callback_end(reqId)
+        self.cancelHeadTimeStamp(reqId)
+
+    def histogramData(self, reqId: int, items: HistogramDataList):
+        """EWrapper method called from reqHistogramData.
+        http://interactivebrokers.github.io/tws-api/histograms.html
+        """
+        self._histogram = items
