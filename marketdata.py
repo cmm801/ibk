@@ -689,20 +689,20 @@ class MarketDataApp(base.BaseApp):
     def __init__(self):
         super().__init__()
         self._pacing_manager = PacingViolationManager()
-        self.__requests = dict()
-        self.__requests_complete = dict()
-        self.__open_streams = dict()
+        self._requests = dict()
+        self._requests_complete = dict()
+        self._open_streams = dict()
         self._histogram = None
 
     def register_request(self, requestObj):
         req_id = requestObj.get_req_ids()[0]
         self._pacing_manager.manage_request(requestObj)
-        self.__requests[req_id] = requestObj
+        self._requests[req_id] = requestObj
         if not requestObj.is_snapshot:
             self._register_open_stream(req_id, requestObj)
 
     def register_request_complete(self, req_id):
-        self.__requests_complete[req_id] = datetime.datetime.now()
+        self._requests_complete[req_id] = datetime.datetime.now()
 
     def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
         # Make sure arguments are not included in kwargs
@@ -784,10 +784,10 @@ class MarketDataApp(base.BaseApp):
         return histogram
 
     def get_open_streams(self):
-        return self.__open_streams
+        return self._open_streams
 
     def is_request_complete(self, req_id):
-        return req_id in self.__requests_complete
+        return req_id in self._requests_complete
 
     def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float,
                               delta: float, optPrice: float, pvDividend: float,
@@ -855,13 +855,13 @@ class MarketDataApp(base.BaseApp):
         self._histogram = items
 
     def _register_open_stream(self, req_id, requestObj):
-        self.__open_streams[req_id] = requestObj
+        self._open_streams[req_id] = requestObj
 
     def _deregister_open_stream(self, req_id):
-        del self.__open_streams[req_id]
+        del self._open_streams[req_id]
 
     def _get_request_object_from_id(self, req_id):
-        return self.__requests[req_id]
+        return self._requests[req_id]
 
     def _handle_callback_end(self, req_id, *args):
         self.register_request_complete(req_id)
