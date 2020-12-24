@@ -139,6 +139,15 @@ class Master(object):
         [reqObj.place_request() for reqObj in reqObjList]
         return reqObjList
 
+    def get_fundamental_data(self, contractList, report_type="ratios", options=None):
+        reqObjList = self.marketdata_app.create_fundamental_data_request(contractList,
+                                                                         report_type=report_type,
+                                                                         options=options)
+
+        # Place data requests for all request objects
+        [reqObj.place_request() for reqObj in reqObjList]
+        return reqObjList
+
     def get_historical_data(self, contractList, frequency, use_rth=True, data_type="TRADES",
                             start="", end="", duration="", is_snapshot=True):
         reqObjList = self.marketdata_app.create_historical_data_request(contractList,

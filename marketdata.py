@@ -21,8 +21,10 @@ import collections
 import numpy as np
 import pandas as pd
 import pytz
+import tempfile
 
 from abc import ABC, abstractmethod
+import xml.etree.ElementTree as ET
 
 from ibapi.contract import Contract, ContractDetails
 from ibapi.ticktype import TickTypeEnum
@@ -219,7 +221,6 @@ class ScannerDataRequest(AbstractDataRequest):
 
     # abstractmethod
     def _request_data(self, req_id):
-        print(req_id)
         # Assemble the arguments for the request
         args = dict(reqId=req_id,
                     subscription=self.scanSubObj,
@@ -251,13 +252,26 @@ class MarketDataRequest(AbstractDataRequestForContract):
         super(MarketDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.fields = fields
 
+    @property
+    def is_fundamental_data_request(self):
+        return self.fields == "47"
+        
     # abstractmethod
     def initialize_data(self):
         self.__market_data = dict()
 
     # abstractmethod
     def append_data(self, new_data):
+        # Save the data
         self.__market_data.update(new_data)
+        
+        # If it is a fundamental data request, we can close the stream and request
+        if self.is_fundamental_data_request and 'FUNDAMENTAL_RATIOS' in new_data:
+            for req_id in self.get_req_ids():
+                self.parent_app.register_request_complete(req_id)
+
+            # Close the stream
+            self.close_stream()
 
     # abstractmethod
     def _request_data(self, req_id):
@@ -272,11 +286,75 @@ class MarketDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     def get_data(self):
         assert len(self.get_req_ids()) == 1, 'Market Data Requests should not have to be split.'
-        return self.__market_data
+        if self.is_fundamental_data_request:
+            # If this is a fundamental data request, then we must parse the data
+            if not self.is_request_complete():
+                # If the request is not processed, then return empty dict 
+                return self.__market_data
+            else:
+                # Parse the fundamental data and return a pandas Series object
+                raw_data = self._parse_fundamental_data()
+                return pd.Series(raw_data, name=self.contract.localSymbol)
+        else:
+            return self.__market_data
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
             self.parent_app.cancelMktData(req_id)
+
+    def _parse_fundamental_data(self):
+        """ Parse the fundamental data that is returned.
+        """
+        date_cols = ['LATESTADATE']
+        string_cols = ['CURRENCY']
+
+        data = dict()
+        for _item in self.__market_data['FUNDAMENTAL_RATIOS'].split(';'):
+            if _item:
+                k, v = _item.split('=')
+                if k in string_cols:
+                    data[k] = v
+                elif k in date_cols:
+                    data[k] = pd.Timestamp(v)
+                elif v == "-99999.99":
+                    data[k] = np.nan
+                else:
+                    data[k] = float(v)
+
+        # Return the parsed fundamental data
+        return data
+
+
+class FundamentalDataRequest(AbstractDataRequestForContract):
+    def __init__(self, parent_app, contract, is_snapshot, report_type="", options=None):
+        assert is_snapshot, 'Fundamental Data is not available as a streaming service.'
+        super(FundamentalDataRequest, self).__init__(parent_app, contract, is_snapshot)
+        self.report_type = report_type
+        self.options = options
+
+    # abstractmethod
+    def initialize_data(self):
+        self.__market_data = None
+
+    # abstractmethod
+    def append_data(self, new_data):
+        assert self.__market_data is None, 'Only expected a single update.'
+        self.__market_data = new_data
+
+    # abstractmethod
+    def _request_data(self, req_id):
+        self.parent_app.reqFundamentalData(reqId=req_id,
+                                           contract=self.contract,
+                                           reportType=self.report_type,
+                                           fundamentalDataOptions=self.options,
+                                          )
+    # abstractmethod
+    def get_data(self):
+        assert len(self.get_req_ids()) == 1, 'Market Data Requests should not have to be split.'
+        return self.__market_data
+
+    def _cancelStreamingSubscription(self):
+        pass
 
 
 class HistoricalDataRequest(AbstractDataRequestForContract):
@@ -787,8 +865,7 @@ class MarketDataApp(base.BaseApp):
                 fields: (str) additional tick data codes that are requested,
                     in additional to the default data codes. A list of available
                     additional tick data codes are available on the IB website.
-        """ 
-        
+        """
         _args = [MarketDataRequest, contractList, is_snapshot]
         _kwargs = dict(fields=fields)
         return self._create_data_request(*_args, **_kwargs)
@@ -830,6 +907,19 @@ class MarketDataApp(base.BaseApp):
         _args = [HeadTimeStampDataRequest, contractList, is_snapshot]
         _kwargs = dict(use_rth=use_rth, data_type=data_type)
         return self._create_data_request(*_args, **_kwargs)
+
+    def create_fundamental_data_request(self, contract, report_type, options=None):
+        if report_type == "ratios":
+            # If the user specifies to get fundamental ratios, use 
+            #    the MarketDataRequest object with fields == '47'
+            is_snapshot = False
+            _args = [MarketDataRequest, contract, is_snapshot]
+            _kwargs = dict(fields="47")
+            return self._create_data_request(*_args, **_kwargs)
+        else:
+            return FundamentalDataRequest(self, contract, is_snapshot=True,
+                                  report_type=report_type, options=options)
+
 
     def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
         return ScannerDataRequest(self, scanSubObj, is_snapshot=False, 
@@ -876,8 +966,31 @@ class MarketDataApp(base.BaseApp):
         while self._xml_params is None and t0 < time.time() + max_wait_time:
             time.sleep(0.1)
 
-        # Return the parameters
-        return self._xml_params
+        # Save the XML to a text file so that ElementTree can access the data
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as tmp_file:
+            tmp_file.writelines(self._xml_params)
+            tmp_file.seek(0)
+
+            # Use the ElementTree to read in the XML
+            tree = ET.parse(tmp_file.name)
+
+        # Parse the data into dict of dicts by going through branches
+        root = tree.getroot()
+        root_children = root.getchildren()
+        root_dict = {}
+        for group in root_children:
+            root_dict[group.tag] = {}
+            for instrument in group.getchildren():
+                if instrument.tag not in root_dict[group.tag]:
+                    root_dict[group.tag][instrument.tag] = []
+
+                entry = {}
+                for child in instrument.getchildren():
+                    entry[child.tag] = child.text
+                root_dict[group.tag][instrument.tag].append(entry)
+
+        # Return the parsed data
+        return root_dict
 
     ##############################################################################
     # Private methods
@@ -975,9 +1088,16 @@ class MarketDataApp(base.BaseApp):
                     benchmark=benchmark, projection=projection, legsStr=legsStr)
         reqObj.append_data(data)
 
+    def _handle_fundamental_data_callback(self, req_id, data):
+        reqObj = self._get_request_object_from_id(req_id)
+        reqObj.append_data(data)
+        
     ##############################################################################
     # Methods for handling response from the client
     ##############################################################################
+
+    def fundamentalData(self, reqId: int, data : str):
+        self._handle_fundamental_data_callback(reqId, data)
     
     def scannerParameters(self, xmlParams):
         self._xml_params = xmlParams
