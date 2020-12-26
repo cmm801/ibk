@@ -161,6 +161,9 @@ class ContractsApp(base.BaseApp):
 
     def find_next_live_future_contract(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
         """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
+        
+            Example usage:
+            self.find_next_live_future_contract(symbol='ES', exchange='SMART')
         """
         sec_type = kwargs.get('secType', 'FUT')
         if sec_type != 'FUT':

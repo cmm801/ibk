@@ -36,9 +36,9 @@ import helper
 import requestmanager
 
 # Status flags
-_STATUS_REQUEST_NOT_PLACED = 'not_placed'
-_STATUS_REQUEST_ACTIVE = 'active'
-_STATUS_REQUEST_COMPLETE = 'complete'
+STATUS_REQUEST_NOT_PLACED = 'not_placed'
+STATUS_REQUEST_ACTIVE = 'active'
+STATUS_REQUEST_COMPLETE = 'complete'
 
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
@@ -84,7 +84,7 @@ class AbstractDataRequest(ABC):
         self.__subrequests = None
         self.__req_ids = [None]
         self.__is_request_complete = False
-        self.__status = _STATUS_REQUEST_NOT_PLACED
+        self.__status = STATUS_REQUEST_NOT_PLACED
         self.initialize_data()
 
     @abstractmethod
@@ -148,8 +148,8 @@ class AbstractDataRequest(ABC):
         return self.__req_ids
 
     def place_request(self):
-        if self.status != _STATUS_REQUEST_ACTIVE:
-            self.status = _STATUS_REQUEST_ACTIVE
+        if self.status != STATUS_REQUEST_ACTIVE:
+            self.status = STATUS_REQUEST_ACTIVE
             if len(self.subrequests) > 1:
                 [reqObj.place_request() for reqObj in self.subrequests]
             else:
@@ -181,7 +181,7 @@ class AbstractDataRequest(ABC):
         if self.is_snapshot:
             raise ValueError('Cannot close a non-streaming request.')
         else:
-            self.status = _STATUS_REQUEST_COMPLETE
+            self.status = STATUS_REQUEST_COMPLETE
             if len(self.subrequests) > 1:
                 [reqObj.close_stream() for reqObj in self.subrequests]
             else:
@@ -215,7 +215,10 @@ class AbstractDataRequestForContract(AbstractDataRequest):
     
     @contract.setter
     def contract(self, ct):
-        self.dataObj = ct
+        if not isinstance(ct, ibapi.contract.Contract):
+            raise ValueError(f'Expected a Contract object, but received a "{ct.__class__}".')
+        else:
+            self.dataObj = ct
 
 
 class ScannerDataRequest(AbstractDataRequest):
@@ -331,7 +334,7 @@ class MarketDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_LINES
+        return requestmanager.RESTRICTION_CLASS_MKT_DATA_LINES
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -656,13 +659,13 @@ class StreamingBarRequest(AbstractDataRequestForContract):
     # abstractmethod
     def _request_data(self, req_id):
         self.parent_app.reqRealTimeBars(
-                                           req_id,
-                                           contract=self.contract,
-                                           barSize=self.barSizeInSeconds(),
-                                           whatToShow=self.data_type,
-                                           useRTH=self.useRTH,
-                                           realTimeBarsOptions=[]
-                                        )
+                                        req_id,
+                                        contract=self.contract,
+                                        barSize=self.barSizeInSeconds(),
+                                        whatToShow=self.data_type,
+                                        useRTH=self.useRTH,
+                                        realTimeBarsOptions=[]
+                                       )
 
     # abstractmethod
     def get_data(self):
@@ -698,6 +701,11 @@ class StreamingBarRequest(AbstractDataRequestForContract):
 
 
 class StreamingTickDataRequest(AbstractDataRequestForContract):
+    """ Create a streaming tick data request.
+    
+        Arguments:
+            data_type: (str) allowed values are  "Last", "AllLast", "BidAsk" or "MidPoint"
+    """
     def __init__(self, parent_app, contract, is_snapshot, data_type="Last",
                                      number_of_ticks=0, ignore_size=True):
         super(StreamingTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
@@ -731,8 +739,19 @@ class StreamingTickDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_TICK
+        return requestmanager.RESTRICTION_CLASS_TICK_DATA
 
+    @property
+    def data_type(self):
+        if self.tickType in ("Last", "AllLast"):
+            return 'LAST'
+        elif self.tickType == 'BidAsk':
+            return 'BID_ASK'
+        elif self.tickType == 'MidPoint':
+            return 'MIDPOINT'
+        else:
+            raise ValueError(f'Unknown tick type: "{self.tickType}".')
+        
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
         prices = [{c: d[c] for c in cols} for d in self.get_data()]
@@ -746,8 +765,13 @@ class StreamingTickDataRequest(AbstractDataRequestForContract):
 
 
 class HistoricalTickDataRequest(AbstractDataRequestForContract):
+    """ Create a historical tick data request.
+    
+        Arguments:
+            data_type: (str) allowed values are 'BID_ASK', 'MIDPOINT', 'TRADES'
+    """
     def __init__(self, parent_app, contract, is_snapshot, start="", end="", use_rth=DEFAULT_USE_RTH,
-                                 data_type="Last", number_of_ticks=1000, ignore_size=True):
+                                 data_type="TRADES", number_of_ticks=1000, ignore_size=True):
         super(HistoricalTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.startDateTime = start
         self.endDateTime = end
@@ -783,10 +807,14 @@ class HistoricalTickDataRequest(AbstractDataRequestForContract):
         assert len(self.get_req_ids()) == 1, 'Historical Tick Data Requests should not have to be split.'
         return self.__market_data
 
+    @property
+    def data_type(self):
+        return self.whatToShow.upper()
+
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_TICK
+        return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -904,16 +932,16 @@ class MarketDataApp(base.BaseApp):
         _kwargs = dict(use_rth=use_rth, data_type=data_type)
         return self._create_data_request(*_args, **_kwargs)
 
-    def create_fundamental_data_request(self, contract, report_type, options=None):
+    def create_fundamental_data_request(self, contractList, report_type, options=None):
         if report_type == "ratios":
             # If the user specifies to get fundamental ratios, use 
             #    the MarketDataRequest object with fields == FUNDAMENTAL_TICK_DATA_CODE
             is_snapshot = False
-            _args = [MarketDataRequest, contract, is_snapshot]
+            _args = [MarketDataRequest, contractList, is_snapshot]
             _kwargs = dict(fields=FUNDAMENTAL_TICK_DATA_CODE)
             return self._create_data_request(*_args, **_kwargs)
         else:
-            return FundamentalDataRequest(self, contract, is_snapshot=True,
+            return FundamentalDataRequest(self, contractList, is_snapshot=True,
                                   report_type=report_type, options=options)
 
     def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
@@ -1119,6 +1147,7 @@ class MarketDataApp(base.BaseApp):
         self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
 
     def headTimestamp(self, reqId: int, timestamp: str):
+        print(reqId, timestamp)
         self._handle_headtimestamp_data_callback(reqId, timestamp)
         self._handle_callback_end(reqId)
         self.cancelHeadTimeStamp(reqId)

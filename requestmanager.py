@@ -7,23 +7,28 @@ HIST_HF_TOT_REQ_PER_TIME_UNIT = (60, 600)    # total # of requests allowed per u
 HIST_HF_CONTRACT_REQ_PER_TIME_UNIT = (6, 2)  # no. requests allowed on 1 contract per unit time
 HIST_HF_SPACING_FOR_IDENTICAL_REQ = 15       # time required between identical high-freq requests
 
-MAX_HISTORICAL_REQUESTS = 50   # Max # of simultaneous historical data requests
-MAX_SCANNERS = 10              # Max # of simultaneous market scanners
-MAX_LINES = 100                # Max # of simultaneous market data streams (aka lines)
+MAX_SIMUL_HISTORICAL_REQUESTS = 50   # Max # of simultaneous historical data requests
+MAX_SIMUL_SCANNERS = 10              # Max # of simultaneous market scanners
+MAX_SIMUL_MKT_DATA_LINES = 100       # Max # of simultaneous market data streams (aka lines)
 
-ERROR_EXCEED_MAX_HIST_REQUESTS = -1    # Error code if max # of simul. hist. requests exceeded
-ERROR_EXCEED_MAX_SCANNERS = -2         # Error code if max # of simul. scanners exceeded
-ERROR_EXCEED_MAX_LINES = -3            # Error code if max # of simul. market data lines exceeded
+MAX_SIMUL_TICK_DATA_REQUESTS = 3                # Max # of simultaneous streaming tick data requests
+MIN_TIME_BTWN_TICK_REQ_ON_SAME_INSTRUMENT = 15  # Min. time to wait between tick requests on same contract
+
+ERROR_EXCEED_MAX_SIMUL_HIST_REQUESTS = -1       # Error code if max # of simul. hist. requests exceeded
+ERROR_EXCEED_MAX_SIMUL_SCANNERS = -2            # Error code if max # of simul. scanners exceeded
+ERROR_EXCEED_MAX_SIMUL_MKT_DATA_LINES = -3      # Error code if max # of simul. market data lines exceeded
+ERROR_EXCEED_MAX_SIMUL_TICK_DATA_REQUESTS = -4  # Error code if max # of simul. tick requests exceeded
 
 # Default time to sleep between historical data requests (in seconds)
 DEFAULT_SLEEP_TIME_FOR_HISTORICAL_REQUEST = 0.2
 
 # Data Request types
-RESTRICTION_CLASS_FUNDAMENTAL = 'fundamental'
+RESTRICTION_CLASS_MKT_DATA_LINES = 'market_data_lines'
 RESTRICTION_CLASS_HISTORICAL_HF = 'historical_high_freq'
 RESTRICTION_CLASS_HISTORICAL_LF = 'historical_low_freq'
+RESTRICTION_CLASS_FUNDAMENTAL = 'fundamental'
+RESTRICTION_CLASS_TICK_DATA = 'tick_data'
 RESTRICTION_CLASS_SCANNER = 'scanner'
-RESTRICTION_CLASS_LINES = 'lines'
 RESTRICTION_CLASS_NONE = 'none'
 
 
@@ -50,9 +55,12 @@ class RequestManager():
         self.requests_complete = dict()
         
         self.open_streams = set()
+        self.open_tick_streams = set()
         self.open_hist_reqs = set()
         self.open_lines = set()
         self.open_scanners = set()
+        
+        self._tick_requests = dict()
 
     def register_request(self, requestObj):
         """ Save the details of a new request.
@@ -63,6 +71,7 @@ class RequestManager():
 
         if not requestObj.is_snapshot:
             self.open_streams.add(req_id)
+
         if RESTRICTION_CLASS_HISTORICAL_HF == requestObj.restriction_class:
             self.open_hist_reqs.add(req_id)
             self._small_bar_hist_data_requests.appendleft((time.time(), requestObj))
@@ -75,8 +84,11 @@ class RequestManager():
             pass
         elif RESTRICTION_CLASS_SCANNER == requestObj.restriction_class:
             self.open_scanners.add(req_id)
-        elif RESTRICTION_CLASS_LINES == requestObj.restriction_class:
+        elif RESTRICTION_CLASS_MKT_DATA_LINES == requestObj.restriction_class:
             self.open_lines.add(req_id)
+        elif RESTRICTION_CLASS_TICK_DATA == requestObj.restriction_class:
+            self.open_tick_streams.add(req_id)
+            self._tick_requests[requestObj.contract.localSymbol] = time.time()
         elif RESTRICTION_CLASS_NONE == requestObj.restriction_class:
             pass
         else:
@@ -89,6 +101,9 @@ class RequestManager():
 
         if req_id in self.open_streams:
             self.open_streams.remove(req_id)
+
+        if req_id in self.open_tick_streams:
+            self.open_tick_streams.remove(req_id)
 
         if req_id in self.open_hist_reqs:
             self.open_hist_reqs.remove(req_id)
@@ -117,8 +132,10 @@ class RequestManager():
             return self._check_if_ready_fundamental(requestObj)
         elif RESTRICTION_CLASS_SCANNER == requestObj.restriction_class:
             return self._check_if_ready_scanner(requestObj)
-        elif RESTRICTION_CLASS_LINES == requestObj.restriction_class:
+        elif RESTRICTION_CLASS_MKT_DATA_LINES == requestObj.restriction_class:
             return self._check_if_ready_lines(requestObj)
+        elif RESTRICTION_CLASS_TICK_DATA == requestObj.restriction_class:
+            return self._check_if_ready_tick_data(requestObj)        
         elif RESTRICTION_CLASS_NONE == requestObj.restriction_class:
             return self._check_if_ready_none(requestObj)
         else:
@@ -127,9 +144,9 @@ class RequestManager():
     def _check_if_ready_historical_high_freq(self, requestObj):
         """ Check simultaneous high frequency data requests.
         """        
-        if len(self.open_hist_reqs) + 1 > MAX_HISTORICAL_REQUESTS:
+        if len(self.open_hist_reqs) + 1 > MAX_SIMUL_HISTORICAL_REQUESTS:
             # Notify the caller that the max. historical requests have been reached
-            return ERROR_EXCEED_MAX_HIST_REQUESTS
+            return ERROR_EXCEED_MAX_SIMUL_HIST_REQUESTS
         else:
             # Always sleep between hist. requests to avoid overloading the server
             sleep_default = DEFAULT_SLEEP_TIME_FOR_HISTORICAL_REQUEST
@@ -146,12 +163,31 @@ class RequestManager():
             # Sleep the maximum amount
             return max(sleep_default, sleep_req_on_same_ct, sleep_tot_hist_req)
 
+    def _check_if_ready_tick_data(self, requestObj):
+        """ Check simultaneous tick data requests.
+        
+            Only 1 streaming tick data request per contract is allowed every 15 seconds.
+            Only 3 streaming tick data requests are allowed to be open at any time.
+        """        
+        if len(self.open_tick_streams) + 1 > MAX_SIMUL_TICK_DATA_REQUESTS:
+            # Notify the caller that the max. historical requests have been reached
+            return ERROR_EXCEED_MAX_SIMUL_TICK_DATA_REQUESTS
+        else:
+            # Get the time of the last tick request on this contract
+            t_last = self._tick_requests.get(requestObj.contract.localSymbol, 0.0)
+
+            # Don't make a repeat request on the same contract too quickly
+            if time.time() - t_last < MIN_TIME_BTWN_TICK_REQ_ON_SAME_INSTRUMENT:
+                return MIN_TIME_BTWN_TICK_REQ_ON_SAME_INSTRUMENT - (time.time() - t_last) + 0.1
+            else:
+                return 0.0
+
     def _check_if_ready_historical_low_freq(self, requestObj):
         """ Check simultaneous low frequency data requests.
         """
-        if len(self.open_hist_reqs) + 1 > MAX_HISTORICAL_REQUESTS:
+        if len(self.open_hist_reqs) + 1 > MAX_SIMUL_HISTORICAL_REQUESTS:
             # Notify the caller that the max. historical requests have been reached
-            return ERROR_EXCEED_MAX_HIST_REQUESTS
+            return ERROR_EXCEED_MAX_SIMUL_HIST_REQUESTS
         else:        
             # Always sleep between hist. requests to avoid overloading the server
             return DEFAULT_SLEEP_TIME_FOR_HISTORICAL_REQUEST
@@ -160,14 +196,14 @@ class RequestManager():
         return 0.0
 
     def _check_if_ready_scanner(self, requestObj):
-        if len(self.open_scanners) + 1 > MAX_SCANNERS:
-            return ERROR_EXCEED_MAX_SCANNERS
+        if len(self.open_scanners) + 1 > MAX_SIMUL_SCANNERS:
+            return ERROR_EXCEED_MAX_SIMUL_SCANNERS
         else:
             return 0.0
 
     def _check_if_ready_lines(self, requestObj):
-        if len(self.open_scanners) + 1 > MAX_LINES:
-            return ERROR_EXCEED_MAX_LINES
+        if len(self.open_scanners) + 1 > MAX_SIMUL_MKT_DATA_LINES:
+            return ERROR_EXCEED_MAX_SIMUL_MKT_DATA_LINES
         else:
             return 0.0
 

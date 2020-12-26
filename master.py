@@ -130,7 +130,7 @@ class Master(object):
     ##################################################################
     # Market Data
     ##################################################################
-
+    
     def get_market_data_snapshots(self, contractList, fields=""):
         reqObjList = self.marketdata_app.create_market_data_request(contractList,
                                                                     is_snapshot=True,
