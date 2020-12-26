@@ -17,7 +17,6 @@ import datetime
 import time
 import pickle
 import copy
-import collections
 import numpy as np
 import pandas as pd
 import pytz
@@ -34,19 +33,12 @@ from ibapi.common import BarData, TickAttrib
 import base
 import constants
 import helper
-
+import requestmanager
 
 # Status flags
 _STATUS_REQUEST_NOT_PLACED = 'not_placed'
-_STATUS_REQUEST_PLACED = 'placed'
-_STATUS_STREAM_CLOSED = 'closed'
-
-# Data Request types
-_RESTRICTION_CLASS_FUNDAMENTAL = 'fundamental'
-_RESTRICTION_CLASS_HISTORICAL = 'historical'
-_RESTRICTION_CLASS_SCANNER = 'scanner'
-_RESTRICTION_CLASS_LINES = 'lines'
-_RESTRICTION_CLASS_NONE = 'none'
+_STATUS_REQUEST_ACTIVE = 'active'
+_STATUS_REQUEST_COMPLETE = 'complete'
 
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
@@ -62,6 +54,9 @@ DEFAULT_NUMBER_OF_SCAN_ROWS = 50
 
 # The tick data code used to obtain fundamental data in a MarketDataRequest
 FUNDAMENTAL_TICK_DATA_CODE = '47'
+
+# What bar size defines a 'small bar' (in seconds)
+SMALL_BAR_CUTOFF_SIZE = 30
 
 
 class DataRequestError(Exception):
@@ -83,12 +78,12 @@ class AbstractDataRequest(ABC):
 
         # Call method to split into valid subrequests if necessary
         sub_reqs = self._split_into_valid_subrequests()
-        self.set_subrequests(sub_reqs)
+        self.subrequests = sub_reqs
 
     def reset_attributes(self):
         self.__subrequests = None
         self.__req_ids = [None]
-        self.__is_request_complete = None
+        self.__is_request_complete = False
         self.__status = _STATUS_REQUEST_NOT_PLACED
         self.initialize_data()
 
@@ -111,7 +106,27 @@ class AbstractDataRequest(ABC):
     @abstractmethod
     def restriction_class(self):
         pass
-    
+
+    @property
+    def request_manager(self):
+        return self.parent_app.request_manager
+
+    @property
+    def status(self):
+        return self.__status
+
+    @status.setter
+    def status(self, s):
+        self.__status = s
+
+    @property
+    def subrequests(self):
+        return self.__subrequests
+
+    @subrequests.setter
+    def subrequests(self, sub_vals):
+        self.__subrequests = sub_vals
+
     def _cancelStreamingSubscription(self):
         pass
 
@@ -120,63 +135,62 @@ class AbstractDataRequest(ABC):
         return is_valid, msg
 
     def is_request_complete(self):
-        if self.__is_request_complete is None:
+        if not self.__is_request_complete:
             req_ids = self.get_req_ids()
-            self.__is_request_complete = all([self.parent_app.is_request_complete(req_id) \
+            self.__is_request_complete = all([self.request_manager.is_request_complete(req_id) \
                                                   for req_id in req_ids])
         return self.__is_request_complete
 
     def get_req_ids(self):
         if all([req_id is None for req_id in self.__req_ids]):
-            if len(self.get_subrequests()) > 1:
-                self.__req_ids = [s.get_req_ids()[0] for s in self.get_subrequests()]
+            if len(self.subrequests) > 1:
+                self.__req_ids = [s.get_req_ids()[0] for s in self.subrequests]
         return self.__req_ids
 
     def place_request(self):
-        if self.get_status() != _STATUS_REQUEST_PLACED:
-            self.set_status(_STATUS_REQUEST_PLACED)
-            if len(self.get_subrequests()) > 1:
-                [reqObj.place_request() for reqObj in self.get_subrequests()]
+        if self.status != _STATUS_REQUEST_ACTIVE:
+            self.status = _STATUS_REQUEST_ACTIVE
+            if len(self.subrequests) > 1:
+                [reqObj.place_request() for reqObj in self.subrequests]
             else:
+                # Check that this is a valid request
                 is_valid, msg = self.is_valid_request()
                 if not is_valid:
                     raise DataRequestError(msg)
 
+                # Create a request ID for this request
                 req_id = self.parent_app._get_next_req_id()
                 self.__req_ids = [req_id]
-                self._register_request_with_parent()
-                self._request_data(req_id)
+                
+                # Check with the RequestManager if this request can be made.
+                # The rate of requests might need to be slowed down if they
+                #   are being performed too quickly.
+                req_status = self.request_manager.check_if_ready(self)
+                if req_status >= -1e-6:
+                    time.sleep(abs(req_status))
+                else:
+                    raise ValueError(f'Error code received on placing request: {req_status}')
 
-    def _register_request_with_parent(self):
-        req_id = self.get_req_ids()[0]
-        self.parent_app.register_request(self)
-        if not self.is_snapshot:
-            self.parent_app._register_open_stream(req_id, self)
+                # Perform the request
+                self._request_data(req_id)
+                
+                # Register the request with the global manager
+                self.request_manager.register_request(self)
 
     def close_stream(self):
-        assert not self.is_snapshot, 'Cannot close a non-streaming request.'
-        self.set_status(_STATUS_STREAM_CLOSED)
-        if len(self.get_subrequests()) > 1:
-            [reqObj._deregister_request_with_parent() for reqObj in self.get_subrequests()]
+        if self.is_snapshot:
+            raise ValueError('Cannot close a non-streaming request.')
         else:
-            req_id = self.get_req_ids()[0]
-            self.parent_app._deregister_open_stream(req_id)
-            self._cancelStreamingSubscription()
+            self.status = _STATUS_REQUEST_COMPLETE
+            if len(self.subrequests) > 1:
+                [reqObj.close_stream() for reqObj in self.subrequests]
+            else:
+                req_id = self.get_req_ids()[0]
+                self.request_manager.register_request_complete(req_id)
+                self._cancelStreamingSubscription()
 
     def copy(self):
         return copy.copy(self)
-
-    def set_subrequests(self, sub_vals):
-        self.__subrequests = sub_vals
-
-    def get_subrequests(self):
-        return self.__subrequests
-
-    def set_status(self, status):
-        self.__status = status
-
-    def get_status(self):
-        return self.__status
 
     def _split_into_valid_subrequests(self):
         """Split a request that is too large to be processed by IB.
@@ -187,9 +201,9 @@ class AbstractDataRequest(ABC):
            split_request_objects (list): a list of valid request objects, which can
                    be combined to provide the data implicit in the original object.
         """
-        if self.get_subrequests() is None:
-            self.set_subrequests([self])
-        return self.get_subrequests()
+        if self.subrequests is None:
+            self.subrequests = [self]
+        return self.subrequests
 
 
 class AbstractDataRequestForContract(AbstractDataRequest):
@@ -252,7 +266,7 @@ class ScannerDataRequest(AbstractDataRequest):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_SCANNER
+        return requestmanager.RESTRICTION_CLASS_SCANNER
         
     def cancel_request(self):
         """ Method to cancel the scanner subscription.
@@ -289,7 +303,7 @@ class MarketDataRequest(AbstractDataRequestForContract):
         if self.is_fundamental_data_request and 'FUNDAMENTAL_RATIOS' in new_data:
             # Register the request as Completed once we get the fundamental data
             for req_id in self.get_req_ids():
-                self.parent_app.register_request_complete(req_id)
+                self.request_manager.register_request_complete(req_id)
 
             # Close the stream
             self.close_stream()
@@ -309,20 +323,15 @@ class MarketDataRequest(AbstractDataRequestForContract):
         assert len(self.get_req_ids()) == 1, 'Market Data Requests should not have to be split.'
         if self.is_fundamental_data_request:
             # If this is a fundamental data request, then we must parse the data
-            if not self.is_request_complete():
-                # If the request is not processed, then return empty dict 
-                return self.__market_data
-            else:
-                # Parse the fundamental data and return a pandas Series object
-                raw_data = self._parse_fundamental_data()
-                return pd.Series(raw_data, name=self.contract.localSymbol)
+            raw_data = self._parse_fundamental_data()
+            return pd.Series(raw_data, name=self.contract.localSymbol)
         else:
             return self.__market_data
 
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_LINES
+        return requestmanager.RESTRICTION_CLASS_LINES
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -335,19 +344,24 @@ class MarketDataRequest(AbstractDataRequestForContract):
         string_cols = ['CURRENCY']
 
         data = dict()
-        for _item in self.__market_data['FUNDAMENTAL_RATIOS'].split(';'):
-            if _item:
-                k, v = _item.split('=')
-                if k in string_cols:
-                    data[k] = v
-                elif k in date_cols:
-                    data[k] = pd.Timestamp(v)
-                elif v == "-99999.99":
-                    data[k] = np.nan
-                elif v == '':
-                    data[k] = np.nan
-                else:
-                    data[k] = float(v)
+        
+        # Get the raw data that has been returned by IB
+        raw_data = self.__market_data.get('FUNDAMENTAL_RATIOS', None)
+        if raw_data is not None:
+            # Parse any fundamental data that has been returned
+            for _item in raw_data.split(';'):
+                if _item:
+                    k, v = _item.split('=')
+                    if k in string_cols:
+                        data[k] = v
+                    elif k in date_cols:
+                        data[k] = pd.Timestamp(v)
+                    elif v == "-99999.99":
+                        data[k] = np.nan
+                    elif v == '':
+                        data[k] = np.nan
+                    else:
+                        data[k] = float(v)
 
         # Return the parsed fundamental data
         return data
@@ -384,7 +398,7 @@ class FundamentalDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_FUNDAMENTAL
+        return requestmanager.RESTRICTION_CLASS_FUNDAMENTAL
 
     def _cancelStreamingSubscription(self):
         pass
@@ -441,12 +455,16 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         if len(self.get_req_ids()) == 1:
             return [self.__market_data]
         else:
-            return [s.get_data()[0] for s in self.get_subrequests()]
+            return [s.get_data()[0] for s in self.subrequests]
 
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_HISTORICAL
+        bar_size = helper.TimeHelper(self.frequency, 'frequency').total_seconds()
+        if SMALL_BAR_CUTOFF_SIZE >= bar_size:
+            return requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
+        else:
+            return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         df = self._get_dataframe_from_raw_data()
@@ -482,7 +500,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
     def _split_into_valid_subrequests(self):
         # Find the timedelta between start and end dates
-        if self.get_subrequests() is None:
+        if self.subrequests is None:
             start_tws = self.get_start_tws()
             end_tws = self.get_end_tws()
             if start_tws is None:
@@ -501,7 +519,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
                         period_start, period_end = period
                         requestObj = self.copy()
                         requestObj.reset_attributes()
-                        requestObj.set_subrequests([requestObj])
+                        requestObj.subrequests = [requestObj]
                         requestObj.start = helper.convert_datetime_to_tws_date(period_start, constants.TWS_TIMEZONE)
                         requestObj.end = helper.convert_datetime_to_tws_date(period_end, constants.TWS_TIMEZONE)
                         requestObj.duration = ""
@@ -654,7 +672,11 @@ class StreamingBarRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_HISTORICAL
+        bar_size = helper.TimeHelper(self.frequency, 'frequency').total_seconds()
+        if SMALL_BAR_CUTOFF_SIZE >= bar_size:
+            return requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
+        else:
+            return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -709,7 +731,7 @@ class StreamingTickDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_TICK
+        return requestmanager.RESTRICTION_CLASS_TICK
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -764,7 +786,7 @@ class HistoricalTickDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_TICK
+        return requestmanager.RESTRICTION_CLASS_TICK
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -810,106 +832,7 @@ class HeadTimeStampDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return _RESTRICTION_CLASS_NONE
-
-
-class RequestManager():
-    """ Class for managing the # of requests to avoid violating IB restrictions.
-
-        Different types of IB requests are subjected to different types of 
-        restrictions. This class looks at individual requests, and provides
-        information to the request about the validity of its request.
-        
-        IB subjects some requests to pacing requirements.
-        IB defines small bar requests as having a bars of 30 seconds or smaller.
-        The requirement is that requests which are defined as 'small bar' can
-        be made only at a certain rate. If the rate of requests exceed the allowed 
-        rate, then IB would reject the request. 
-        
-        This RequestManager class slows down the requests to avoid violations.
-    """
-
-    TOTAL_REQUESTS_PER_TIME_UNIT = (60, 600)   # (number of requests allowed, time unit in seconds)
-    CONTRACT_REQUESTS_PER_TIME_UNIT = (6, 2)   # (number of requests allowed, time unit in seconds)
-    SMALL_BAR_CUTOFF_SIZE = 30                 # In seconds
-
-    _small_bar_market_data_requests = collections.deque(maxlen=TOTAL_REQUESTS_PER_TIME_UNIT[0])
-
-    def __init_(self, parent_app):
-        """ Class initializer. """
-        self.parent_app = parent_app
-    
-    def manage_request(self, requestObj):
-        """ Inform the request how it should proceed to avoid violating IB restrictions.
-        """
-        print('Request made...')
-
-        if _RESTRICTION_CLASS_HISTORICAL == requestObj.restriction_class:
-            time.sleep(0.2)  # Always sleep for 0.2 seconds between requests to avoid overloading the server
-            if self._is_small_bar_data_request(requestObj):
-                # Only manage the request further if it is a 'small bar' (30 seconds or less)
-                self.update_queue()
-                self.check_requests_on_same_contract(requestObj)
-                self.ensure_total_requests_not_exceeded()
-                self._small_bar_market_data_requests.appendleft((time.time(), requestObj))
-                if requestObj.data_type == 'BID_ASK':
-                    # BID_ASK requests count 2x, so we add an extra copy of the request to the queue
-                    self._small_bar_market_data_requests.appendleft((time.time(), requestObj))
-        elif _RESTRICTION_CLASS_FUNDAMENTAL == requestObj.restriction_class:
-            pass
-        elif _RESTRICTION_CLASS_SCANNER == requestObj.restriction_class:
-            pass
-        elif _RESTRICTION_CLASS_LINES == requestObj.restriction_class:
-            pass
-        elif _RESTRICTION_CLASS_NONE == requestObj.restriction_class:
-            pass
-        else:
-            raise ValueError(f'Unknown restriction class: {requestObj.restriction_class}')
-
-    def update_queue(self):
-        while self. _small_bar_market_data_requests and \
-        time.time() - self._small_bar_market_data_requests[-1][0] > self.TOTAL_REQUESTS_PER_TIME_UNIT[1]:
-            self._small_bar_market_data_requests.pop()
-
-    def check_requests_on_same_contract(self, requestObj):
-        # Space out requests
-        N, T = self.CONTRACT_REQUESTS_PER_TIME_UNIT
-        count = 0
-        if 'data_type' in requestObj.__dict__:
-            for past_request in self._small_bar_market_data_requests:
-                t_past, reqObj_past = past_request
-                if time.time() - t_past > T:
-                    break
-                elif not isinstance(reqObj_past, requestObj.__class__):
-                    continue
-                elif requestObj.contract.__dict__ == reqObj_past.contract.__dict__ \
-                        and requestObj.data_type == reqObj_past.data_type:
-                    count += 1
-                    t_first = t_past
-
-        if count >= N - 1:
-            dt = (time.time() - t_first)
-            print('Sleeping to avoid pacing violation from requests on same contract...')
-            time.sleep(T - dt + 0.1)
-
-    def ensure_total_requests_not_exceeded(self):
-        N, T = self.TOTAL_REQUESTS_PER_TIME_UNIT
-        if N == len(self._small_bar_market_data_requests):
-            dt = (time.time() - self._small_bar_market_data_requests[-1][0])
-            if dt < T:
-                t_sleep = T - dt + 0.1
-                print('Sleeping {} seconds at {} to avoid pacing violation on total requests.'.format(\
-                                    t_sleep, datetime.datetime.now()))
-                time.sleep(t_sleep)
-
-    def clear_queue(self):
-        self._small_bar_market_data_requests = collections.deque(maxlen=self.TOTAL_REQUESTS_PER_TIME_UNIT[0])
-
-    def _is_small_bar_data_request(self, reqObj):
-        """ Test whether the request meets the definition of a 'small bar' data request.
-        """
-        return isinstance(reqObj, HistoricalDataRequest) and \
-               self.SMALL_BAR_CUTOFF_SIZE >= helper.TimeHelper(reqObj.frequency, 'frequency').total_seconds()
+        return requestmanager.RESTRICTION_CLASS_NONE
 
 
 class MarketDataApp(base.BaseApp):
@@ -922,20 +845,10 @@ class MarketDataApp(base.BaseApp):
     """
     def __init__(self):
         super(MarketDataApp, self).__init__()
-        self._request_manager = RequestManager(self)
-        self._requests = dict()
-        self._requests_complete = dict()
-        self._open_streams = dict()
+        self.request_manager = requestmanager.RequestManager()
 
-    def register_request(self, requestObj):
-        req_id = requestObj.get_req_ids()[0]
-        self._request_manager.manage_request(requestObj)
-        self._requests[req_id] = requestObj
-        if not requestObj.is_snapshot:
-            self._register_open_stream(req_id, requestObj)
-
-    def register_request_complete(self, req_id):
-        self._requests_complete[req_id] = datetime.datetime.now()
+    def get_open_streams(self):
+        return self.request_manager.open_streams
 
     def create_market_data_request(self, contractList, is_snapshot, fields=""):
         """ Create a MarketDataRequest object for getting  current market data.
@@ -1003,16 +916,9 @@ class MarketDataApp(base.BaseApp):
             return FundamentalDataRequest(self, contract, is_snapshot=True,
                                   report_type=report_type, options=options)
 
-
     def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
         return ScannerDataRequest(self, scanSubObj, is_snapshot=False, 
                                   options=options, filters=filters)
-
-    def get_open_streams(self):
-        return self._open_streams
-
-    def is_request_complete(self, req_id):
-        return req_id in self._requests_complete
 
     def get_scanner_parameters(self, max_wait_time=2):
         self._xml_params = None
@@ -1053,6 +959,9 @@ class MarketDataApp(base.BaseApp):
     # Private methods
     ##############################################################################
 
+    def _get_request_object_from_id(self, req_id):
+        return self.request_manager.requests[req_id]
+
     def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
         # Make sure arguments are not included in kwargs
         kwargs.pop('contractList', None)
@@ -1065,17 +974,8 @@ class MarketDataApp(base.BaseApp):
             requestObjList.append(request_obj)
         return requestObjList
 
-    def _register_open_stream(self, req_id, requestObj):
-        self._open_streams[req_id] = requestObj
-
-    def _deregister_open_stream(self, req_id):
-        del self._open_streams[req_id]
-
-    def _get_request_object_from_id(self, req_id):
-        return self._requests[req_id]
-
     def _handle_callback_end(self, req_id, *args):
-        self.register_request_complete(req_id)
+        self.request_manager.register_request_complete(req_id)
 
     def _handle_market_data_callback(self, req_id, field, val, attribs=None):
         reqObj = self._get_request_object_from_id(req_id)
@@ -1107,7 +1007,7 @@ class MarketDataApp(base.BaseApp):
         if ticks:
             reqObj.append_data(ticks)
         if done:
-            self.register_request_complete(req_id)
+            self.request_manager.register_request_complete(req_id)
 
     def _handle_tickByTickAllLast_callback(self, req_id, tickType, _time,
                                            price, size, tickAttribLast, exchange, specialConditions):

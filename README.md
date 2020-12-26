@@ -24,10 +24,11 @@ Use port 7497 for paper trading.
 
 # To Do
 
-* Incorporate all IB restrictions into the RequestRestrictionManager.
-* Keep track of open streams in RequestRestrictionManager.
+* Incorporate all IB restrictions into the RequestManager.
+* Migrate tracking of open streams to the RequestManager.
 * Add Wrapper class to DataRequest classes so that they return formatted data
-* create tests for market data
+* write tests for market data
+* Parse XML from fundamental data requests
 * expand tests to include executing of trades
 * Create database for fundamental data
 
