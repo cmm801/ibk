@@ -22,8 +22,20 @@ Use port 7497 for paper trading.
 ## Example
 [Demo Jupyter Lab Notebook](http://htmlpreview.github.com/?https://github.com/brentjm/Interactive-Brokers-API/blob/master/InteractiveBrokersDemo.html)
 
+# To Do
+
+* Incorporate all IB restrictions into the RequestRestrictionManager.
+* Keep track of open streams in RequestRestrictionManager.
+* Add Wrapper class to DataRequest classes so that they return formatted data
+* create tests for market data
+* expand tests to include executing of trades
+* Create database for fundamental data
+
+
 # Author
-**Brent Maranzano**
+**Christopher Miller**
+
+*The project started with the repository of [Brent Maranzano](https://github.com/brentjm/Interactive-Brokers-API.git), which I subsequently expanded.*
 
 # License
 This project is licensed under the MIT License - see the LICENSE.md file for details
