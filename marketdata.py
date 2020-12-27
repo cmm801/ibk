@@ -35,11 +35,6 @@ import constants
 import helper
 import requestmanager
 
-# Status flags
-STATUS_REQUEST_NOT_PLACED = 'not_placed'
-STATUS_REQUEST_ACTIVE = 'active'
-STATUS_REQUEST_COMPLETE = 'complete'
-
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
 
@@ -84,7 +79,7 @@ class AbstractDataRequest(ABC):
         self.__subrequests = None
         self.__req_ids = [None]
         self.__is_request_complete = False
-        self.__status = STATUS_REQUEST_NOT_PLACED
+        self.__status = requestmanager.STATUS_REQUEST_NOT_PLACED
         self.initialize_data()
 
     @abstractmethod
@@ -148,8 +143,8 @@ class AbstractDataRequest(ABC):
         return self.__req_ids
 
     def place_request(self):
-        if self.status != STATUS_REQUEST_ACTIVE:
-            self.status = STATUS_REQUEST_ACTIVE
+        if self.status != requestmanager.STATUS_REQUEST_ACTIVE:
+            self.status = requestmanager.STATUS_REQUEST_ACTIVE
             if len(self.subrequests) > 1:
                 [reqObj.place_request() for reqObj in self.subrequests]
             else:
@@ -178,16 +173,13 @@ class AbstractDataRequest(ABC):
                 self.request_manager.register_request(self)
 
     def close_stream(self):
+        """ Close any open streams and register the request as complete.
+        """
         if self.is_snapshot:
             raise ValueError('Cannot close a non-streaming request.')
         else:
-            self.status = STATUS_REQUEST_COMPLETE
-            if len(self.subrequests) > 1:
-                [reqObj.close_stream() for reqObj in self.subrequests]
-            else:
-                req_id = self.get_req_ids()[0]
+            for req_id in self.get_req_ids():
                 self.request_manager.register_request_complete(req_id)
-                self._cancelStreamingSubscription()
 
     def copy(self):
         return copy.copy(self)
@@ -237,9 +229,10 @@ class ScannerDataRequest(AbstractDataRequest):
 
     @property
     def n_rows(self):
-        N = self.scanSubObj.numberOfRows
-        if N == -1:
+        if self.scanSubObj.numberOfRows == -1:
             return DEFAULT_NUMBER_OF_SCAN_ROWS
+        else:
+            return self.scanSubObj.numberOfRows
 
     # abstractmethod
     def initialize_data(self):
@@ -642,7 +635,9 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
 
 class StreamingBarRequest(AbstractDataRequestForContract):
-    def __init__(self, parent_app, contract, is_snapshot, data_type="TRADES", use_rth=DEFAULT_USE_RTH, frequency='5s'):
+    def __init__(self, parent_app, contract, is_snapshot, data_type="TRADES", 
+                 use_rth=DEFAULT_USE_RTH, frequency='5s'):
+        assert not is_snapshot, 'Streaming requests must have is_snapshot == False.'
         super(StreamingBarRequest, self).__init__(parent_app, contract, is_snapshot)
         self.frequency = frequency
         self.data_type = data_type
@@ -708,6 +703,7 @@ class StreamingTickDataRequest(AbstractDataRequestForContract):
     """
     def __init__(self, parent_app, contract, is_snapshot, data_type="Last",
                                      number_of_ticks=0, ignore_size=True):
+        assert not is_snapshot, 'A Streaming tick request must have is_snapshot == False.'
         super(StreamingTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
         self.tickType = data_type
         self.numberOfTicks = number_of_ticks
@@ -918,7 +914,7 @@ class MarketDataApp(base.BaseApp):
         _kwargs = dict(data_type=data_type, number_of_ticks=number_of_ticks, ignore_size=ignore_size)
         return self._create_data_request(*_args, **_kwargs)
 
-    def create_historical_tick_data_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type="Last",
+    def create_historical_tick_data_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type="TRADES",
                                        start="", end="", number_of_ticks=1000):
         is_snapshot = True
         _args = [HistoricalTickDataRequest, contractList, is_snapshot]
@@ -967,16 +963,15 @@ class MarketDataApp(base.BaseApp):
 
         # Parse the data into dict of dicts by going through branches
         root = tree.getroot()
-        root_children = root.getchildren()
         root_dict = {}
-        for group in root_children:
+        for group in root:
             root_dict[group.tag] = {}
-            for instrument in group.getchildren():
+            for instrument in group:
                 if instrument.tag not in root_dict[group.tag]:
                     root_dict[group.tag][instrument.tag] = []
 
                 entry = {}
-                for child in instrument.getchildren():
+                for child in instrument:
                     entry[child.tag] = child.text
                 root_dict[group.tag][instrument.tag].append(entry)
 
@@ -1147,7 +1142,6 @@ class MarketDataApp(base.BaseApp):
         self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
 
     def headTimestamp(self, reqId: int, timestamp: str):
-        print(reqId, timestamp)
         self._handle_headtimestamp_data_callback(reqId, timestamp)
         self._handle_callback_end(reqId)
         self.cancelHeadTimeStamp(reqId)

@@ -15,8 +15,10 @@ Classes
 """
 import os
 import time
-import pickle
 import datetime
+import pytz
+import pickle
+import bisect
 import numpy as np
 import pandas as pd
 
@@ -178,7 +180,13 @@ class ContractsApp(base.BaseApp):
         # Find the nearest contract with sufficient days until expiration
         exp_dates = np.array([pd.Timestamp(c.realExpirationDate).date() for c in contract_details])
         idx = np.where(exp_dates > pd.Timestamp.now() + pd.DateOffset(days=min_days_until_expiry))[0][0]
-        return contract_details[idx].contract
+        next_contract = contract_details[idx].contract
+        
+        # Cache the contract
+        self._cache_contract_details(contract_details[idx])
+        
+        # Return the next contract
+        return next_contract
 
     def get_market_rule_info(self, rule_ids, max_wait_time=None):
         """Get market rule information based on rule ids.
@@ -203,7 +211,85 @@ class ContractsApp(base.BaseApp):
             return [self._market_rule_info[x] for x in rule_ids]
         else:
             raise ValueError('Request has failed.')
-        
+
+    def get_trading_intervals(self, contract_details, liquid_hours=False):
+        """ Extract the trading intervals for a ContractDetails object.
+
+            Arguments:
+                contract_details: (ContractDetails) the contract details
+                    for which we want to find trading hours.
+                liquid_hours: (bool) whether we want to just use the liquid
+                    hours instead of all trading hours.
+        """
+        # Get the intervals during which the contract is trading
+        if liquid_hours:
+            trading_hour_str = contract_details.liquidHours
+        else:
+            trading_hour_str = contract_details.tradingHours
+
+        # Parse the start/end dates of the intervals
+        intervals = [tuple(x.split('-')) for x in trading_hour_str.split(';')]
+
+        # Create a timezone object for the TWS time zone
+        tws_tz_info = pytz.timezone(constants.TWS_TIMEZONE)
+
+        # Loop through the different entries and extract the start/end time of trading periods
+        start = []
+        end = []
+        for iv in intervals:
+            if len(iv) == 1:
+                if 'CLOSED' in iv[0]:
+                    pass
+                elif len(iv[0]):
+                    raise ValueError('Expected start and end of interval.')
+            else:
+                # Extract datetime objects from the string date information
+                SD = datetime.datetime.strptime(iv[0], '%Y%m%d:%H%M')
+                ED = datetime.datetime.strptime(iv[1], '%Y%m%d:%H%M')
+
+                # Make the dates time-zone aware and append them
+                start.append(tws_tz_info.localize(SD))
+                end.append(tws_tz_info.localize(ED))
+
+        return start, end
+
+    def is_in_trading_hours(self, contract, target=None, liquid_hours=False):
+        """ Determine whether a contract is trading at a given time.
+
+            Arguments:
+                contract: (Contract/ContractDetails) the contract or 
+                    contract details for which trading hours are desired.
+                target: (datetime) the time at which we want to check
+                    if the contract is trading. If no input is provided,
+                    then the current time is used.
+                liquid_hours: (bool) whether we want to just use the liquid
+                    hours instead of all trading hours.
+        """    
+        if isinstance(contract, ibapi.contract.Contract):
+            contract_details = self.get_contract_details(contract.localSymbol)
+        elif not isinstance(contract, ibapi.contract.ContractDetails):
+            raise ValueError('Input "contract" must be either a Contract or ContractDetails object.')
+
+        # Use the current time if none is provided
+        if target is None:
+            # Create a timezone object for the TWS time zone
+            tws_tz_info = pytz.timezone(constants.TWS_TIMEZONE)
+
+            # Get the current time in the TWS time zone
+            target = datetime.datetime.now(tws_tz_info)
+
+        # Get the start/end of trading periods
+        start, end = self.get_trading_intervals(contract_details, liquid_hours=liquid_hours)
+
+        # Find the location of the relevant interval for the target time
+        idx = bisect.bisect_right(start, target)
+
+        if idx == 0:
+            # Case where the target time is before all intervals
+            return False
+        else:
+            return start[idx-1] <= target and target <= end[idx-1]
+
     def _request_contract_details(self, partial_contract, max_wait_time=None):
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.reqContractDetails is called,
@@ -394,7 +480,7 @@ class ContractsApp(base.BaseApp):
         ct_dict = target_contract.__dict__
         return self._get_contract_from_dict(ct_dict)
 
-    def save_contracts(self, file='contract_file.json', mode='w'):
+    def save_contracts(self):
         """ Save the cached contract details to file.
         
             Calling this method saves the cached contract details

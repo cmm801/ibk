@@ -19,6 +19,11 @@ ERROR_EXCEED_MAX_SIMUL_SCANNERS = -2            # Error code if max # of simul. 
 ERROR_EXCEED_MAX_SIMUL_MKT_DATA_LINES = -3      # Error code if max # of simul. market data lines exceeded
 ERROR_EXCEED_MAX_SIMUL_TICK_DATA_REQUESTS = -4  # Error code if max # of simul. tick requests exceeded
 
+# Status flags
+STATUS_REQUEST_NOT_PLACED = 'not_placed'
+STATUS_REQUEST_ACTIVE = 'active'
+STATUS_REQUEST_COMPLETE = 'complete'
+
 # Default time to sleep between historical data requests (in seconds)
 DEFAULT_SLEEP_TIME_FOR_HISTORICAL_REQUEST = 0.2
 
@@ -65,9 +70,18 @@ class RequestManager():
     def register_request(self, requestObj):
         """ Save the details of a new request.
         """
-        print('Request made...')        
-        req_id = requestObj.get_req_ids()[0]
-        self.requests[req_id] = requestObj
+        # Check that the request object represents a single request
+        req_ids = requestObj.get_req_ids()
+        if len(req_ids) != 1:
+            raise ValueError('Expected only a single request.')
+        else:
+            req_id = req_ids[0]
+
+        # Check that we are not re-registering an old request (this should never happen)
+        if req_id in self.requests:
+            raise ValueError(f'The request {req_id} has already been registered.')
+        else:
+            self.requests[req_id] = requestObj
 
         if not requestObj.is_snapshot:
             self.open_streams.add(req_id)
@@ -97,7 +111,17 @@ class RequestManager():
     def register_request_complete(self, req_id):
         """ Change the register information to indicate a request is closed.
         """
+        # Save the time of completion
         self.requests_complete[req_id] = datetime.datetime.now()
+        
+        # Get the request instance
+        reqObj = self.requests[req_id]
+        
+        # Update the status of the request to be complete
+        reqObj.status = STATUS_REQUEST_COMPLETE
+
+        # Cancel any streaming subscription that might be open
+        reqObj._cancelStreamingSubscription()
 
         if req_id in self.open_streams:
             self.open_streams.remove(req_id)

@@ -100,7 +100,34 @@ class Master(object):
             contract details is loaded in the __init__ method.
         """
         self.contracts_app.save_contracts()
-    
+
+    def get_trading_intervals(self, contract_details, liquid_hours=False):
+        """ Extract the trading intervals for a ContractDetails object.
+
+            Arguments:
+                contract_details: (ContractDetails) the contract details
+                    for which we want to find trading hours.
+                liquid_hours: (bool) whether we want to just use the liquid
+                    hours instead of all trading hours.
+        """
+        return self.contracts_app.get_trading_intervals(contract_details,
+                                                        liquid_hours=liquid_hours)
+
+    def is_in_trading_hours(self, contract, target=None, liquid_hours=False):
+        """ Determine whether a contract is trading at a given time.
+
+            Arguments:
+                contract: (Contract/ContractDetails) the contract or 
+                    contract details for which trading hours are desired.
+                target: (datetime) the time at which we want to check
+                    if the contract is trading. If no input is provided,
+                    then the current time is used.
+                liquid_hours: (bool) whether we want to just use the liquid
+                    hours instead of all trading hours.
+        """
+        return self.contracts_app.is_in_trading_hours(contract, target=target,
+                                                      liquid_hours=liquid_hours)
+        
     ##################################################################
     # Accounts and Positions
     ##################################################################
