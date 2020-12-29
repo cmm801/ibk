@@ -88,12 +88,9 @@ class BaseApp(IBWrapper, IBClient):
                            errorString])
             raise connect.ConnectionNotEstablishedError(msg)
         elif errorCode == 200:
-            # This error means that the contract request was ambiguous, 
-            #   and no matching contract could be found. In this case,
-            #   we set the private variables such that the subscriber stops
-            #   searching for matches.
-            self._contract_details_request_complete[reqId] = True
-            self._contract_details[reqId] = []
+            # This error means that the contract request was ambiguous
+            super().error(reqId, errorCode, errorString)            
+            raise AmbiguousContractError('Ambiguous contract definition.')
         elif errorCode == 321:
             super().error(reqId, errorCode, errorString)
             raise ServerValidationError('Validation error returned by server.')
@@ -117,7 +114,7 @@ class BaseApp(IBWrapper, IBClient):
         return self
 
     def keyboardInterrupt(self):
-        """Stop exectution.
+        """Stop execution.
         """
         pass
 
@@ -137,7 +134,16 @@ class BaseApp(IBWrapper, IBClient):
 
 
 class ServerValidationError(Exception):
-    """ Exception for handling case when the server raises an error while validating the request."""
+    """ Exception for handling case when the server raises an error while validating the request.
+    """
     def __init__(self, message):
         # Call the base class constructor with the parameters it needs
         super(ServerValidationError, self).__init__(message)
+
+
+class AmbiguousContractError(Exception):
+    """ Exception for handling ambiguously defined contract requests.
+    """
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(AmbiguousContractError, self).__init__(message)

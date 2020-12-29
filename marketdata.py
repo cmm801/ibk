@@ -351,7 +351,10 @@ class MarketDataRequest(AbstractDataRequestForContract):
                     if k in string_cols:
                         data[k] = v
                     elif k in date_cols:
-                        data[k] = pd.Timestamp(v)
+                        try:
+                            data[k] = pd.Timestamp(v)
+                        except:
+                            data[k] = np.datetime64('NaT')
                     elif v == "-99999.99":
                         data[k] = np.nan
                     elif v == '':

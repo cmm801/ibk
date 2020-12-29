@@ -22,12 +22,22 @@ Use port 7497 for paper trading.
 ## Example
 [Demo Jupyter Lab Notebook](http://htmlpreview.github.com/?https://github.com/brentjm/Interactive-Brokers-API/blob/master/InteractiveBrokersDemo.html)
 
+
+# Testing
+
+To run all tests from the command line using the unittest package, run:
+```
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+To run only tests in a particular directory, write instead:
+```
+python -m unittest discover -s tests -p "test_*.py"
+```
+
 # To Do
 
-* Incorporate all IB restrictions into the RequestManager.
-* Migrate tracking of open streams to the RequestManager.
 * Add Wrapper class to DataRequest classes so that they return formatted data
-* write tests for market data
 * Parse XML from fundamental data requests
 * expand tests to include executing of trades
 * Create database for fundamental data

@@ -119,7 +119,7 @@ class ConnectionInfo():
                 # No specific client Id has been requested, so we try
                 #     different client Ids until we find one that works
                 cid = n_attempts = 1
-                max_attempts = 10
+                max_attempts = 30
                 print('Attempting to connect with unused clientId...'.format(cid))
                 while (app is None or not app.isConnected()) and n_attempts <= max_attempts:
                     while cid in self._global_apps.keys():
@@ -142,6 +142,7 @@ class ConnectionInfo():
                             app.serverVersion(), app.twsConnectionTime(), app.clientId))
                 print('MarketDataApp connecting to IB...')
                 return app
+
 
 class ConnectionNotEstablishedError(Exception):
     """ Exception for handling case when connection could not be established to IB server."""

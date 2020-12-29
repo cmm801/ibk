@@ -66,6 +66,9 @@ class MarketDataTest(unittest.TestCase):
         # Check that there are no streams open
         ctr = 0
         with self.subTest(i=ctr):
+            if len(self.mdapp.get_open_streams()):
+                print('Open streams: ', \
+                  [self.mdapp.request_manager.requests[req_id] for req_id in self.mdapp.get_open_streams()])
             self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be no streams open.')
 
         # Check the status of the request objects
@@ -323,7 +326,9 @@ class MarketDataTest(unittest.TestCase):
             self.assertIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
         
         # Sleep until there is some data populating the request
-        while not reqObj.get_data():
+        t0 = time.time()
+        while not reqObj.get_data() and len(ts_data) < n_ticks and time.time() - t0 < 3:
+            # Sleep up to a few seconds to wait for all the tick data to be returned.
             time.sleep(0.1)
 
         # Get the data

@@ -150,7 +150,7 @@ class ContractsApp(base.BaseApp):
         ct = self._select_contract(partial_contract, possible_contracts)
         if ct is None:
             s = partial_contract.symbol
-            raise ValueError('Partial contract has no matches for symbol: {}'.format(s))
+            return None
         else:
             # Get the ContractDetails object corresponding to the matched Contract
             con_ids = [c.conId for c in possible_contracts]
@@ -206,7 +206,7 @@ class ContractsApp(base.BaseApp):
         is_completed = lambda : all([x in self._market_rule_info for x in set(rule_ids)])
         t0 = time.time()
         while not is_completed() and time.time() - t0 < max_wait_time:
-            time.sleep(0.2)
+            time.sleep(0.05)
         if is_completed():
             return [self._market_rule_info[x] for x in rule_ids]
         else:
@@ -290,6 +290,25 @@ class ContractsApp(base.BaseApp):
         else:
             return start[idx-1] <= target and target <= end[idx-1]
 
+    # Gracefully handle some errors
+    def error(self, reqId, errorCode: int, errorString: str):
+        """ Overide base class error handling.
+        
+            To allow finding matching contract requests to fail gracefully,
+            we handle ambiguous contract definitions separately.
+        """
+        cdrc = self._contract_details_request_complete
+        if errorCode == 200 and reqId in cdrc and not cdrc[reqId]:
+            # This error means that the contract request was ambiguous,             
+            #   and no matching contract could be found. In this case,
+            #   we set the private variables such that the subscriber stops
+            #   searching for matches.
+            print('No matches: ambiguous contract request.')
+            self._contract_details_request_complete[reqId] = True
+            self._contract_details[reqId] = []
+        else:
+            super().error(reqId, errorCode, errorString)
+
     def _request_contract_details(self, partial_contract, max_wait_time=None):
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.reqContractDetails is called,
@@ -317,7 +336,7 @@ class ContractsApp(base.BaseApp):
         # Loop until the server has completed the request.
         t0 = time.time()
         while not self._contract_details_request_complete[req_id] and time.time() - t0 < max_wait_time:
-            time.sleep(0.2)
+            time.sleep(0.05)
         return self._contract_details[req_id]
 
     def _create_partial_contract(self, **kwargs):
@@ -331,41 +350,60 @@ class ContractsApp(base.BaseApp):
                 partial_contract.__setattr__(key, val)   
         return partial_contract
 
-    def _select_contract(self, contract, contract_details):
-        if 'STK' == contract.secType:
-            return self._select_equity_contract(contract, contract_details)
+    def _select_contract(self, contract, possible_contracts):
+        if len(possible_contracts) == 1:
+            # If there is only a single match, then return it
+            return possible_contracts[0]
+        if len(possible_contracts) == 0:
+            # If there are no matches, return None
+            return None
+        elif 'STK' == contract.secType:
+            return self._select_equity_contract(contract, possible_contracts)
         elif 'FUT' == contract.secType:
-            return self._select_futures_contract(contract, contract_details)
+            return self._select_futures_contract(contract, possible_contracts)
         elif 'OPT' == contract.secType:
-            return self._select_options_contract(contract, contract_details)
+            return self._select_options_contract(contract, possible_contracts)
         elif 'IND' == contract.secType:
-            return self._select_index_contract(contract, contract_details)
+            return self._select_index_contract(contract, possible_contracts)
         elif 'CASH' == contract.secType:
-            return self._select_forex_contract(contract, contract_details)
+            return self._select_forex_contract(contract, possible_contracts)
         elif 'BOND' == contract.secType:
-            return self._select_bond_contract(contract, contract_details)
+            return self._select_bond_contract(contract, possible_contracts)
         elif 'CMDTY' == contract.secType:
-            return self._select_commodity_contract(contract, contract_details)
+            return self._select_commodity_contract(contract, possible_contracts)
         elif 'FUND' == contract.secType:
-            return self._select_mutual_fund_contract(contract, contract_details)
+            return self._select_mutual_fund_contract(contract, possible_contracts)
         elif 'FOP' == contract.secType:
-            return self._select_futures_option_contract(contract, contract_details)
+            return self._select_futures_option_contract(contract, possible_contracts)
         else:
             raise ValueError('Invalid secType: {}'.format(contract.secType))
 
-    def _select_equity_contract(self, target_contract, contract_details):
+    def _select_equity_contract(self, target_contract, possible_contracts):
         # Select the proper contract
-        supported_exchanges = ["NYSE", 'NASDAQ', 'AMEX', 'ARCA', 'BATS']
-        for contract in contract_details:
-            if target_contract.currency == 'USD':
-                # NYSE stock
-                pex = contract.primaryExchange
-                if pex in supported_exchanges:
-                    return contract
-                else:
-                    raise ValueError(f'Unsupported exchange: {pex}')
-            else:
-                raise NotImplemtedError( 'Currently only supported for USD stocks.' )
+        supported_exchanges = {'USD' : ["NYSE", 'NASDAQ', 'AMEX', 'ARCA', 'BATS']}
+        
+        # Use SMART exchange if no exchange is specified
+        if not target_contract.exchange:
+            possible_contracts = [_ct for _ct in possible_contracts if _ct.exchange == 'SMART']
+        
+        if len(possible_contracts) == 0:
+            return None
+        
+        # Filter to keep just contracts with the supported primary exchanges
+        if target_contract.currency in supported_exchanges:
+            exchanges = supported_exchanges[target_contract.currency]
+            pex_contracts = [_ct for _ct in possible_contracts if _ct.primaryExchange in exchanges]
+        else:
+            pex_contracts = possible_contracts
+            
+        if len(pex_contracts) == 0:
+            return None
+        elif len(pex_contracts) == 1:
+            return pex_contracts[0]
+        else:
+            msg = 'Multiple possible contract matches for: {}'.format(\
+                                            target_contract.__dict__)
+            raise MultipleContractMatchesError(msg)
 
     def _filter_derivative_contracts(self, contract_list, target_contract, filter_type='third_friday'):
         """Filter a list of contracts by a particular condition.
@@ -526,4 +564,11 @@ class ContractsApp(base.BaseApp):
     def marketRule(self, marketRuleId, priceIncrements):
         super().marketRule(marketRuleId, priceIncrements)
         self._market_rule_info[marketRuleId] = priceIncrements
-    
+
+
+class MultipleContractMatchesError(Exception):
+    """ Exception for mult. matching contracts for single ct. request.
+    """
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(MultipleContractMatchesError, self).__init__(message)

@@ -105,7 +105,29 @@ class AccountApp(base.BaseApp):
             return positions_df.loc[localSymbol, 'size']
         else:
             return 0.0        
-        
+
+    def _request_positions(self):
+        """Get contracts and a dictionary of details for all account positions.
+        Call the EClient method reqPositions, wait for
+        a short time and then return the class variable positions.
+
+        Returns (tuple): (positions, contracts)
+           positions (dict): contains details on the positions in the account
+           contracts (list): Contract objects for each position in the account
+        """
+        self._positions = []
+        self._position_contracts = []
+        self._position_request_completed = False
+        self.reqPositions()
+
+        while not self._position_request_completed:
+            time.sleep(0.05)
+        return self._positions, self._position_contracts
+    
+    ################################################################################
+    # Methods to handle callbacks from the client
+    ################################################################################
+    
     def position(self, account: str, _contract: ibapi.contract.Contract, 
                  position: float, avgCost: float):
         """ Callback method from EClient to obtain position info.
@@ -127,7 +149,7 @@ class AccountApp(base.BaseApp):
         self._position_contracts.append(_contract)
 
     def positionEnd(self):
-        """Cancel the position subscription after a return.
+        """ Callback method from EClient indicate position query has finished.
         """
         super().positionEnd()
         self._position_request_completed = True
@@ -135,29 +157,16 @@ class AccountApp(base.BaseApp):
 
     def accountSummary(self, reqId: int, account: str, tag: str, value: str,
                     currency: str):
+        """ Callback method from EClient that returns account information.
+        """
         super().accountSummary(reqId, account, tag, value, currency)
         info = dict(reqId=reqId, account=account, tag=tag, value=value,
                              currency=currency)
         self._account_details.append(info)
 
     def accountSummaryEnd(self, reqId: int):
+        """ Callback method from EClient indicating that all account info has been returned.
+        """        
         super().accountSummaryEnd(reqId)
         self.cancelAccountSummary(reqId)
 
-    def _request_positions(self):
-        """Get contracts and a dictionary of details for all account positions.
-        Call the EClient method reqPositions, wait for
-        a short time and then return the class variable positions.
-
-        Returns (tuple): (positions, contracts)
-           positions (dict): contains details on the positions in the account
-           contracts (list): Contract objects for each position in the account
-        """
-        self._positions = []
-        self._position_contracts = []
-        self._position_request_completed = False
-        self.reqPositions()
-
-        while not self._position_request_completed:
-            time.sleep(0.05)
-        return self._positions, self._position_contracts
