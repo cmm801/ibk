@@ -347,7 +347,7 @@ class MarketDataTest(unittest.TestCase):
 
         # Close the stream
         reqObj.close_stream()
-        
+
         # Check that the stream has been closed
         ctr += 1
         with self.subTest(i=ctr):

@@ -22,7 +22,7 @@ class ConnectionInfo():
         if self._port != p:
             self.reset_connections()
             self._port = p
-
+            
     def reset_connections(self):
         """ Reset all connections. """
         for _app in self._global_apps.values():

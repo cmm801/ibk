@@ -138,8 +138,10 @@ class Master(object):
             positions_df = self._include_mv_in_positions(positions_df)
         return positions_df, contracts
 
-    def get_account_details(self):
-        return self.account_app.get_account_details()
+    def get_account_details(self, group='All', tags="$LEDGER"):
+        """ Get the details of the account. """
+        return self.account_app.get_account_details(group=group,
+                                                    tags=tags)
 
     def get_total_account_value(self):
         return self.account_app.get_total_account_value()

@@ -26,7 +26,9 @@ from ibapi import wrapper
 from ibapi.client import EClient
 from ibapi.common import TickerId
 
+import constants
 import connect
+
 
 def setup_logger():
     """Setup the logger.
@@ -131,6 +133,17 @@ class BaseApp(IBWrapper, IBClient):
         current_req_id = self.__req_id
         self.__req_id += 1
         return current_req_id
+
+    @property
+    def account_number(self):
+        """ Get the account number based on the port we used for the connection.
+        """
+        if self.port == constants.PORT_PAPER:
+            return constants.TWS_PAPER_ACCT_NUM
+        elif self.port == constants.PORT_PROD:
+            return constants.TWS_PROD_ACCT_NUM
+        else:
+            raise ValueError(f'Unsupported port: {self.port}')
 
 
 class ServerValidationError(Exception):
