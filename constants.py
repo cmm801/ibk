@@ -19,7 +19,7 @@ TIMEZONE_UTC = 'UTC'
 TIMEZONE_LOC = datetime.datetime.now(datetime.timezone(datetime.timedelta(0))).astimezone().tzinfo
 
 # The timezone specified at login to TWS. All historical data refer to this timezone.
-TWS_TIMEZONE = 'US/Eastern'
+TIMEZONE_TWS = TIMEZONE_EST
 
 # Declare constant variables for the supported clients
 MARKETDATA = 'marketdata'

@@ -231,7 +231,7 @@ class ContractsApp(base.BaseApp):
         intervals = [tuple(x.split('-')) for x in trading_hour_str.split(';')]
 
         # Create a timezone object for the TWS time zone
-        tws_tz_info = pytz.timezone(constants.TWS_TIMEZONE)
+        tws_tz_info = pytz.timezone(constants.TIMEZONE_TWS)
 
         # Loop through the different entries and extract the start/end time of trading periods
         start = []
@@ -273,7 +273,7 @@ class ContractsApp(base.BaseApp):
         # Use the current time if none is provided
         if target is None:
             # Create a timezone object for the TWS time zone
-            tws_tz_info = pytz.timezone(constants.TWS_TIMEZONE)
+            tws_tz_info = pytz.timezone(constants.TIMEZONE_TWS)
 
             # Get the current time in the TWS time zone
             target = datetime.datetime.now(tws_tz_info)

@@ -33,6 +33,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_create_single_order(self):
         """ Test that we can create a SingleOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
@@ -53,6 +55,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_create_order_group_multiple(self):
         """ Test that we can create an OrderGroup object with multiple contracts/orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')        
@@ -85,6 +89,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_create_order_group_single(self):
         """ Test that we can create an OrderGroup object with a single contract/order.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
@@ -114,6 +120,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_combine_single_orders(self):
         """ Test that we can combine two SingleOrder objects.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWW')        
@@ -147,6 +155,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_cast_single_order(self):
         """ Test that we can cast a SingleOrder object to an OrderGroup object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')        
@@ -168,6 +178,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_single_order_place_order(self):
         """ Test that we can place an order for a SingleOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='ESM0')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
@@ -187,6 +199,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_order_group_place_order(self):
         """ Test that we can place an order for a GroupOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='GLD')
         cnt_2 = self._create_contract(conId=2, symbol='VXX')
@@ -210,6 +224,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_single_order_cancel_order(self):
         """ Test that we can place an order for a SingleOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
@@ -237,6 +253,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_order_group_cancel_order(self):
         """ Test that we can place an order for a GroupOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')
@@ -268,6 +286,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_incompatible_status(self):
         """ Test that we cannot combine objects with different "status" flags.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')
@@ -286,6 +306,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_incompatible_status(self):
         """ Test that the status flag reveals differences in underlying SingleOrder objects.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
@@ -305,6 +327,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_order_group_from_single_orders(self):
         """ Test that we can create a GroupOrder from a SingleOrder object.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=123, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
@@ -335,6 +359,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_combining_objects(self):
         """ Test that we can combine SingleOrder and OrderGroup objects using "+".
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
@@ -372,6 +398,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_order_group_add(self):
         """ Test the "add" method on OrderGroup.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
@@ -402,6 +430,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_unique_order_ids(self):
         """ Test that we cannot create an OrderGroup with repeated order ids.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
@@ -435,6 +465,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_single_order_are_equal(self):
         """ Test that we compare two SingleOrder objects with '=='.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
         cnt_2 = self._create_contract(conId=2124142, symbol='IBM')
@@ -461,6 +493,8 @@ class OrderGroupTest(unittest.TestCase):
     def test_order_group_are_equal(self):
         """ Test that we compare two OrderGroup objects with '=='.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         mock_app = MockApplication(port=constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
         cnt_2 = self._create_contract(conId=2124142, symbol='IBM')        

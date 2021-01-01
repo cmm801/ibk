@@ -44,6 +44,8 @@ class ContractsTest(unittest.TestCase):
     def test_get_contract_for_index(self):
         """ Check that we can retrieve a contract.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         _contract = self.app.get_contract('SPX')
 
         ctr = 0
@@ -64,6 +66,8 @@ class ContractsTest(unittest.TestCase):
     def test_get_contract_details_for_index(self):
         """ Check that we can retrieve a contract.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         _cd = self.app.get_contract_details('SPX')
 
         ctr = 0
@@ -94,6 +98,8 @@ class ContractsTest(unittest.TestCase):
     def test_get_contract_for_stock(self):
         """ Check that we can retrieve a contract.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         _contract = self.app.get_contract('AAPL')
         ctr = 0
         with self.subTest(i=ctr):        
@@ -118,6 +124,8 @@ class ContractsTest(unittest.TestCase):
     def test_get_contract_details_for_stock(self):
         """ Check that we can retrieve a contract.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         _cd = self.app.get_contract_details('AA')
 
         ctr = 0
@@ -163,6 +171,8 @@ class ContractsTest(unittest.TestCase):
     def test_find_matching_contract_details_for_stock(self):
         """ Check that all retrieved instruments match the requirements.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the ContractDetails for matching contracts
         contract_details = self.app.find_matching_contract_details(symbol='AAPL', 
                                                 exchange='SMART', secType='STK')
@@ -191,6 +201,8 @@ class ContractsTest(unittest.TestCase):
     def test_find_best_matching_contract_for_stock(self):
         """ Check that the best matching Contract meets the requirements.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the best ContractDetails object
         _cd = self.app.find_best_matching_contract_details(symbol='IBM', 
                                 exchange='SMART', secType='STK', currency='USD')
@@ -228,7 +240,9 @@ class ContractsTest(unittest.TestCase):
 
     def test_find_next_live_future_contract(self):
         """ Check that the next future can be obtained accurately.
-        """            
+        """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the next liquid ES contract
         min_days_until_expiry = 10
         _contract = self.app.find_next_live_future_contract(min_days_until_expiry=min_days_until_expiry, 

@@ -519,8 +519,8 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
                         requestObj = self.copy()
                         requestObj.reset_attributes()
                         requestObj.subrequests = [requestObj]
-                        requestObj.start = helper.convert_datetime_to_tws_date(period_start, constants.TWS_TIMEZONE)
-                        requestObj.end = helper.convert_datetime_to_tws_date(period_end, constants.TWS_TIMEZONE)
+                        requestObj.start = helper.convert_datetime_to_tws_date(period_start, constants.TIMEZONE_TWS)
+                        requestObj.end = helper.convert_datetime_to_tws_date(period_end, constants.TIMEZONE_TWS)
                         requestObj.duration = ""
                         requestObjList.append(requestObj)
                     return requestObjList
@@ -549,17 +549,17 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
     def get_start_tws(self):
         if self.start:
-            return helper.convert_tws_date_to_datetime(self.start, constants.TWS_TIMEZONE)
+            return helper.convert_tws_date_to_datetime(self.start, constants.TIMEZONE_TWS)
         else:
             return None
 
     def get_end_tws(self):
         if not self.end:
             end_utc = pytz.utc.localize(datetime.datetime.utcnow())
-            tws_tzone = pytz.timezone(constants.TWS_TIMEZONE)
+            tws_tzone = pytz.timezone(constants.TIMEZONE_TWS)
             return end_utc.astimezone(tws_tzone)
         else:
-            return helper.convert_tws_date_to_datetime(self.end, constants.TWS_TIMEZONE)
+            return helper.convert_tws_date_to_datetime(self.end, constants.TIMEZONE_TWS)
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -589,10 +589,9 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
         if bar_freq.units == 'days':
             # TWS convention seems to be that days begin and end at 18:00 EST
-            tz_info = pytz.timezone(constants.TWS_TIMEZONE)
+            tz_info = pytz.timezone(constants.TIMEZONE_TWS)
             start_tws = datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1),
                                                   datetime.time(18,0), tzinfo=tz_info)
-            assert False
             end_tws = datetime.datetime.combine(end_tws.date(), datetime.time(18,0), tzinfo=tz_info)
 
 

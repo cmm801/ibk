@@ -16,11 +16,20 @@ import requestmanager
 class MarketDataTest(unittest.TestCase):
     def setUp(self):
         """ Perform any required set-up before each method call. """
-        pass
+        self.reqObjList = None
         
     def tearDown(self):
-        """ Remove anything from 'setUp' after each method call. """
-        pass
+        """ Remove anything from 'setUp' after each method call. 
+        
+            Make sure that any market data requests are closed
+        """
+        if self.reqObjList is not None:
+            for reqObj in self.reqObjList:
+                try:
+                    reqObj.close_stream()
+                except:
+                    pass
+            self.reqObjList = None
 
     @classmethod
     def setUpClass(cls):
@@ -49,7 +58,8 @@ class MarketDataTest(unittest.TestCase):
     def test_get_open_streams(self):
         """ Test whether method get_open_streams works properly.
         """
-        print('Running test_get_open_streams...')
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the contract list
         tickers = ['SPY']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
@@ -59,7 +69,7 @@ class MarketDataTest(unittest.TestCase):
         frequency='1d'
         duration='10d'
         use_rth = True
-        reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
+        self.reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
                                                                frequency, data_type=data_type,
                                                                duration=duration)
 
@@ -72,16 +82,16 @@ class MarketDataTest(unittest.TestCase):
             self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be no streams open.')
 
         # Check the status of the request objects
-        for reqObj in reqObjList:
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_NOT_PLACED)
 
         # Place requests
-        [reqObj.place_request() for reqObj in reqObjList]
+        [reqObj.place_request() for reqObj in self.reqObjList]
 
         # Check the status of the request objects
-        for reqObj in reqObjList:
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_ACTIVE)
@@ -92,13 +102,13 @@ class MarketDataTest(unittest.TestCase):
         # Check that streams are open now
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be 1 stream open.')
+            self.assertEqual(len(self.mdapp.get_open_streams()), 1, msg='There should be 1 stream open.')
 
         # Close all streams
-        [reqObj.close_stream() for reqObj in reqObjList]
+        [reqObj.close_stream() for reqObj in self.reqObjList]
 
         # Check the status of the request objects
-        for reqObj in reqObjList:
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_COMPLETE)
@@ -112,25 +122,26 @@ class MarketDataTest(unittest.TestCase):
     def test_create_market_data_request_snapshot(self):
         """ Test the method create_market_data_request.
         """
-        print('Running test_create_market_data_request_snapshot...')        
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the contract list
         tickers = ['AAPL', 'MSFT']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
 
         # Create the request objects
         is_snapshot = True  # Work with a snapshot
-        reqObjList = self.mdapp.create_market_data_request(contractList, is_snapshot)
+        self.reqObjList = self.mdapp.create_market_data_request(contractList, is_snapshot)
 
         # We expect the output to be a list of request objects
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObjList, list)
+            self.assertIsInstance(self.reqObjList, list)
 
         # Place requests
-        [x.place_request() for x in reqObjList]
+        [x.place_request() for x in self.reqObjList]
         
         # Check the details of the individual requests
-        for reqObj in reqObjList:
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertIsInstance(reqObj, marketdata.MarketDataRequest)
@@ -154,7 +165,8 @@ class MarketDataTest(unittest.TestCase):
     def test_create_historical_data_request_snapshot(self):
         """ Test the method create_historical_data_request when is_snapshot == True.
         """        
-        print('Running test_create_historical_data_request_snapshot...')                
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the contract list
         tickers = ['JNK']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
@@ -164,17 +176,17 @@ class MarketDataTest(unittest.TestCase):
         frequency='1d'
         duration='10d'
         use_rth = True
-        reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
+        self.reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
                                                                frequency, data_type=data_type,
                                                                duration=duration)
         # We expect the output to be a list of request objects
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObjList, list)
+            self.assertIsInstance(self.reqObjList, list)
 
         # Place requests
-        [x.place_request() for x in reqObjList]
-        for reqObj in reqObjList:
+        [x.place_request() for x in self.reqObjList]
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertIsInstance(reqObj, marketdata.HistoricalDataRequest)
@@ -199,7 +211,8 @@ class MarketDataTest(unittest.TestCase):
     def test_create_historical_data_request_streaming(self):
         """ Test the method create_historical_data_request when is_snapshot == False.
         """        
-        print('Running test_create_historical_data_request_streaming...')
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the contract list
         tickers = ['IBM']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
@@ -209,17 +222,17 @@ class MarketDataTest(unittest.TestCase):
         frequency='1d'
         duration='10d'
         use_rth = True
-        reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
+        self.reqObjList = self.mdapp.create_historical_data_request(contractList, is_snapshot,
                                                                frequency, data_type=data_type,
                                                                duration=duration)
         # We expect the output to be a list of request objects
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObjList, list)
+            self.assertIsInstance(self.reqObjList, list)
 
         # Place requests
-        [x.place_request() for x in reqObjList]
-        for reqObj in reqObjList:
+        [x.place_request() for x in self.reqObjList]
+        for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
                 self.assertIsInstance(reqObj, marketdata.HistoricalDataRequest)
@@ -237,19 +250,20 @@ class MarketDataTest(unittest.TestCase):
                                     msg='Some expected data keys are missing.')
 
         # Close all streams
-        [reqObj.close_stream() for reqObj in reqObjList]
+        [reqObj.close_stream() for reqObj in self.reqObjList]
 
     def test_create_streaming_bar_data_request(self):
         """ Test that method 'create_streaming_bar_data_request' works as expected.
         """
-        print('Running test_create_streaming_bar_data_request...')        
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a list of contracts
         contractList = [self.app.get_contract('GS')]
 
         # Create the request object
-        reqObjList = self.mdapp.create_streaming_bar_data_request(contractList, frequency='5s', 
+        self.reqObjList = self.mdapp.create_streaming_bar_data_request(contractList, frequency='5s', 
                                                              use_rth=False, data_type="TRADES")
-        reqObj = reqObjList[0]
+        reqObj = self.reqObjList[0]
         
         # Place the requests
         reqObj.place_request()
@@ -263,7 +277,7 @@ class MarketDataTest(unittest.TestCase):
         
         # Sleep until there is some data populating the request
         t0 = time.time()
-        while not len(reqObjList[0].get_data()) and time.time() - t0 < 5:
+        while not len(self.reqObjList[0].get_data()) and time.time() - t0 < 5:
             time.sleep(0.1)
 
         # Get the data
@@ -299,21 +313,22 @@ class MarketDataTest(unittest.TestCase):
     def test_create_streaming_tick_data_request(self):
         """ Test method 'create_streaming_tick_data_request'.
         """
-        print('Running test_create_streaming_tick_data_request...')                
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get a single contract
         contractList = [self.app.contracts_app.find_next_live_future_contract(symbol='VIX',
                                                                               exchange='CFE')]
         
         # Create the request object
         n_ticks = 50
-        reqObjList = self.mdapp.create_streaming_tick_data_request(contractList, 
+        self.reqObjList = self.mdapp.create_streaming_tick_data_request(contractList, 
                     data_type="Last", number_of_ticks=n_ticks, ignore_size=True)
 
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObjList, list)
+            self.assertIsInstance(self.reqObjList, list)
 
-        reqObj = reqObjList[0]
+        reqObj = self.reqObjList[0]
         
         # Place the request
         reqObj.place_request()
@@ -327,7 +342,7 @@ class MarketDataTest(unittest.TestCase):
         
         # Sleep until there is some data populating the request
         t0 = time.time()
-        while not reqObj.get_data() and len(ts_data) < n_ticks and time.time() - t0 < 3:
+        while not reqObj.get_data() and len(reqObj.get_data()) < n_ticks and time.time() - t0 < 3:
             # Sleep up to a few seconds to wait for all the tick data to be returned.
             time.sleep(0.1)
 
@@ -356,7 +371,8 @@ class MarketDataTest(unittest.TestCase):
     def test_create_historical_tick_data_request(self):
         """ Test method 'create_historical_tick_data_request'.
         """
-        print('Running test_create_historical_tick_data_request...')                        
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get a single contract
         contractList = [self.app.contracts_app.find_next_live_future_contract(symbol='ES',
                                                                               exchange='GLOBEX')]
@@ -364,14 +380,14 @@ class MarketDataTest(unittest.TestCase):
         # Create the request object
         n_ticks = 80
         end = datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d %H:%M:%S')        
-        reqObjList = self.mdapp.create_historical_tick_data_request(contractList,
+        self.reqObjList = self.mdapp.create_historical_tick_data_request(contractList,
                     data_type="TRADES", number_of_ticks=n_ticks, end=end)
 
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObjList, list)
+            self.assertIsInstance(self.reqObjList, list)
 
-        reqObj = reqObjList[0]
+        reqObj = self.reqObjList[0]
         
         # Place the request
         reqObj.place_request()
@@ -397,25 +413,26 @@ class MarketDataTest(unittest.TestCase):
     def test_create_first_date_request(self):
         """ Test whether create_first_date_request works.
         """
-        print('Running test_create_first_date_request...')                                
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the contract list
         tickers = ['EWW', 'EWJ', 'EWP']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
         
         # Create the request object
-        reqObjList = self.mdapp.create_first_date_request(contractList, data_type='TRADES')
+        self.reqObjList = self.mdapp.create_first_date_request(contractList, data_type='TRADES')
         
         # Place the request
-        [reqObj.place_request() for reqObj in reqObjList]
+        [reqObj.place_request() for reqObj in self.reqObjList]
         
         # Sleep until the requests are complete
-        for idx, reqObj in enumerate(reqObjList):
+        for idx, reqObj in enumerate(self.reqObjList):
             reqObj.place_request()
             while reqObj.get_data() is None:
                 time.sleep(0.2)
 
         # Get the first dates
-        first_dates = [reqObj.get_data() for reqObj in reqObjList]
+        first_dates = [reqObj.get_data() for reqObj in self.reqObjList]
         
         # Check that the first dates are valid
         ctr = 0
@@ -435,21 +452,22 @@ class MarketDataTest(unittest.TestCase):
     def test_create_fundamental_data_request_ratios(self):
         """ Test method 'create_fundamental_data_request' for input 'ratios'.
         """
-        print('Running test_create_fundamental_data_request_ratios...')                                        
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a list of contracts
         tickers = ['TSLA', 'NVS']
         contractList = [self.app.get_contract(tkr) for tkr in tickers]
         
         # Specify the type of fundamental data to request
         report_type = 'ratios'
-        reqObjList = self.mdapp.create_fundamental_data_request(contractList, report_type=report_type)
+        self.reqObjList = self.mdapp.create_fundamental_data_request(contractList, report_type=report_type)
 
         # Place requests
-        [x.place_request() for x in reqObjList]
+        [x.place_request() for x in self.reqObjList]
 
         # Check the details of the individual requests
         ctr = 0
-        for reqObj in reqObjList:
+        for reqObj in self.reqObjList:
             # Check the 
             ctr += 1
             with self.subTest(i=ctr):
@@ -473,7 +491,8 @@ class MarketDataTest(unittest.TestCase):
     def test_create_scanner_data_request(self):
         """ Test the method for create_scanner_data_request.
         """
-        print('Running test_create_scanner_data_request...')
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Specify the number of scanner rows that we are requesting
         n_rows = 10
         
@@ -486,6 +505,7 @@ class MarketDataTest(unittest.TestCase):
 
         # Create a request object for the scanner
         reqObj = self.mdapp.create_scanner_data_request(scanSubObj)
+        self.reqObjList = [reqObj] # Assign this variable to make use of the destructor for cleam-up
 
         # Place the request
         reqObj.place_request()
@@ -523,7 +543,7 @@ class MarketDataTest(unittest.TestCase):
     def test_get_scanner_parameters(self, max_wait_time=2):
         """ Test the method to 'get_scanner_parameters'.
         """
-        print('Running test_get_scanner_parameters...')        
+        print(f"\nRunning test method {self._testMethodName}\n")
         
         # Get the scanner parameters
         scanner_params = self.mdapp.get_scanner_parameters()        

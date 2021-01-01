@@ -61,6 +61,8 @@ class OrdersTest(unittest.TestCase):
     def test_place_and_cancel_single_order(self):
         """ Test that we can retrieve open orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a limit order 
         limit_order = self.app.create_limit_order(self.AAPL_contract, action='BUY',
                                                   totalQuantity=3, lmtPrice=50)
@@ -90,6 +92,8 @@ class OrdersTest(unittest.TestCase):
     def test_place_and_cancel_group_order(self):
         """ Test that we can retrieve open orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create an OrderGroup object with 2 orders
         limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
                                                   totalQuantity=3, lmtPrice=50)
@@ -130,6 +134,8 @@ class OrdersTest(unittest.TestCase):
     def test_cancel_orders(self):
         """ Test that we can cancel open orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create an OrderGroup object with 2 orders
         limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
                                                   totalQuantity=3, lmtPrice=50)
@@ -170,6 +176,8 @@ class OrdersTest(unittest.TestCase):
     def test_cancel_all_orders(self):
         """ Test that we can cancel all open orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create an OrderGroup object with 2 orders
         limit_order_1 = self.app.create_limit_order(self.AAPL_contract, action='BUY',
                                                   totalQuantity=3, lmtPrice=50)
@@ -206,6 +214,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_order_buy(self):
         """ Test that we can create a generic buy order.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a limit order
         _contract = self.AAPL_contract
         action = 'BUY'
@@ -235,6 +245,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_order_sell(self):
         """ Test that we can create a generic sell order.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a limit order 
         _contract = self.ES_contract
         action = 'SELL'
@@ -264,6 +276,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_market_order(self):
         """ Test that we can create a market order.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a limit order 
         _contract = self.ES_contract
         action = 'BUY'
@@ -290,7 +304,9 @@ class OrdersTest(unittest.TestCase):
 
     def test_create_limit_order(self):
         """ Test that we can create a limit order.
-        """        
+        """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Create a limit order 
         _contract = self.AAPL_contract
         action = 'SELL'
@@ -320,6 +336,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_bracket_order(self):
         """ Test that we can create bracket orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         print('\n###################################################################')
         print('Need to implement test for "create_bracket_order" in "test_orders.py".')
         print('###################################################################')
@@ -327,6 +345,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_trailing_stop_order(self):
         """ Test that we can create trailing stop orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         print('\n###################################################################')
         print('Need to implement test for "create_trailing_stop_order" in "test_orders.py".')
         print('###################################################################')
@@ -335,6 +355,8 @@ class OrdersTest(unittest.TestCase):
     def test_create_stop_limit_order(self):
         """ Test that we can create stop limit orders.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         print('\n###################################################################')
         print('Need to implement test for "create_stop_limit_order" in "test_orders.py".')
         print('###################################################################')

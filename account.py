@@ -15,12 +15,16 @@ Classes
 """
 
 import time
+import datetime
+import pytz
 import numpy as np
 import pandas as pd
 import ibapi
 import base
 
 from ibapi.contract import Contract
+
+import constants
 
 MAX_WAIT_TIME = 5   # Max wait time in seconds. Large requests are slow
 
@@ -39,6 +43,7 @@ class AccountApp(base.BaseApp):
         # Initialize some variables used for storing account information
         self._account_value = None
         self._portfolio_value = None
+        self._account_update_complete = False
         self.account_info_last_updated = None
 
     def get_positions(self):
@@ -86,7 +91,7 @@ class AccountApp(base.BaseApp):
         return df
 
     def get_total_account_value(self):
-        acct_info = self.get_account_details(group='All', tags='$LEDGER')
+        acct_info = self.get_account_details(group='All', tags='$LEDGER').set_index('tag')
         key = 'NetLiquidationByCurrency'
         if key not in acct_info.index:
             return np.nan
@@ -107,7 +112,7 @@ class AccountApp(base.BaseApp):
         else:
             return 0.0        
 
-    def get_account_info(self, acct_num=None):
+    def get_account_info(self, acct_num=None, max_wait_time=None):
         """ Get the account information.
         
             This method returns a DataFrame with the information returned from
@@ -118,15 +123,14 @@ class AccountApp(base.BaseApp):
             
         if self._account_value is None:
             # Account updates has not yet been called, so we call it now
-            self.get_account_updates()
-            
-            # Sleep for a bit and then try again
-            time.sleep(0.2)
-            return self.get_account_info(acct_num=acct_num)
+            self.get_account_updates(max_wait_time=max_wait_time)
+                
+            # Return the account info
+            return self.get_account_info(acct_num=acct_num, max_wait_time=max_wait_time)
         else:
             return self._account_value.loc[acct_num].copy()
 
-    def get_portfolio_info(self, acct_num=None):
+    def get_portfolio_info(self, acct_num=None, max_wait_time=None):
         """ Get the portfolio information.
         
             This method returns a DataFrame with the information returned from
@@ -137,10 +141,9 @@ class AccountApp(base.BaseApp):
 
         if self._portfolio_value is None:
             # Account updates has not yet been called, so we call it now
-            self.get_account_updates()
-            
-            # Sleep for a bit and then try again
-            time.sleep(0.2)
+            self.get_account_updates(max_wait_time=max_wait_time)
+
+            # Return the portfolio info
             return self.get_portfolio_info(acct_num=acct_num)
         else:
             ptf_info = self._portfolio_value.loc[acct_num].copy()
@@ -196,11 +199,22 @@ class AccountApp(base.BaseApp):
         # Return the portfolio information
         return ptf_info
 
-    def get_account_updates(self, acct_num=None):
+    def get_account_updates(self, acct_num=None, max_wait_time=None):
+        """ Subscribe for account and portfolio updates.
+        """
         if acct_num is None:
             acct_num = self.account_number
 
+        if max_wait_time is None:
+            max_wait_time = 5
+            
+        # Make the request to the client
         self.reqAccountUpdates(subscribe=True, acctCode=acct_num)
+        
+        # Sleep until the request has been completed
+        t0 = time.time()
+        while not self._account_update_complete and time.time() - t0 < max_wait_time:
+            time.sleep(0.05)
 
     def cancel_account_updates(self, acct_num=None):
         if acct_num is None:
@@ -297,7 +311,19 @@ class AccountApp(base.BaseApp):
             self._portfolio_value.loc[(accountName, contract.localSymbol), :] = values
 
     def updateAccountTime(self, timestamp: str):
-        self.account_info_last_updated = timestamp
+        """Store the time of the last account update.
+        """
+        # Convert the input to a datetime
+        update_time = datetime.datetime.strptime(timestamp, '%H:%M')
+        
+        # Get the current date in the TWS time zone.
+        tws_tzinfo = pytz.timezone(constants.TIMEZONE_TWS)
+        curr_datetime_tws = tws_tzinfo.localize(datetime.datetime.now())
+
+        # Convert the date and time info. Save the last update datetime
+        self.account_info_last_updated = datetime.datetime.combine(curr_datetime_tws.date(), 
+                                  update_time.time(), tzinfo=tws_tzinfo)
 
     def accountDownloadEnd(self, account: str):
-        pass
+        self._account_update_complete = True
+        print(f'Account download complete: {datetime.datetime.now()}')

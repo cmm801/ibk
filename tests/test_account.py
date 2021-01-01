@@ -44,6 +44,8 @@ class AccountTest(unittest.TestCase):
     def test_get_total_account_value(self):
         """ Check that the account value can be obtained.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         # Get the account value
         account_val = self.app.get_total_account_value()
         
@@ -54,6 +56,8 @@ class AccountTest(unittest.TestCase):
     def test_get_positions(self):
         """ Check that we can obtain the current positions.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+
         positions_df, contracts = self.app.get_positions()
         
         # Run sub-tests, using a counter
@@ -97,8 +101,10 @@ class AccountTest(unittest.TestCase):
     def test_get_account_details(self):
         """ Check that the total account value is correct.
         """
+        print(f"\nRunning test method {self._testMethodName}\n")
+    
         # Get the account details
-        acct_df = self.app.get_account_details()
+        acct_df = self.app.get_account_details().set_index('tag')
         
         # Check that the account value is as expected
         tot_acct_val = self.app.get_total_account_value()
@@ -118,6 +124,7 @@ class AccountTest(unittest.TestCase):
 
     def test_get_position_size(self):
         """ Test the method to 'get_position_size'. """
+        print(f"\nRunning test method {self._testMethodName}\n")
         print('\n###################################################################')
         print('Need to implement test for "get_position_size" in "test_account.py".')
         print('###################################################################')
