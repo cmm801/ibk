@@ -21,18 +21,18 @@ import pickle
 import bisect
 import numpy as np
 import pandas as pd
-
 import ibapi
-import base
-import helper
-import constants
+
+import ibk.base
+import ibk.helper
+import ibk.constants
 
 
 __CLIENT_ID = 127
 MAX_WAIT_TIME = 10  # time in seconds. Large requests are slow
 
 
-class ContractsApp(base.BaseApp):
+class ContractsApp(ibk.base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
 
@@ -231,7 +231,7 @@ class ContractsApp(base.BaseApp):
         intervals = [tuple(x.split('-')) for x in trading_hour_str.split(';')]
 
         # Create a timezone object for the TWS time zone
-        tws_tz_info = pytz.timezone(constants.TIMEZONE_TWS)
+        tws_tz_info = pytz.timezone(ibk.constants.TIMEZONE_TWS)
 
         # Loop through the different entries and extract the start/end time of trading periods
         start = []
@@ -273,7 +273,7 @@ class ContractsApp(base.BaseApp):
         # Use the current time if none is provided
         if target is None:
             # Create a timezone object for the TWS time zone
-            tws_tz_info = pytz.timezone(constants.TIMEZONE_TWS)
+            tws_tz_info = pytz.timezone(ibk.constants.TIMEZONE_TWS)
 
             # Get the current time in the TWS time zone
             target = datetime.datetime.now(tws_tz_info)
@@ -413,7 +413,7 @@ class ContractsApp(base.BaseApp):
             if len(expiry_string) == 6:
                 # Get the expiration year/month from the expiry string
                 expiry_ym = datetime.datetime.strptime(expiry_string, "%Y%m")
-                third_friday = helper.get_third_friday(expiry_ym.year, expiry_ym.month)
+                third_friday = ibk.helper.get_third_friday(expiry_ym.year, expiry_ym.month)
                 expiry_date = datetime.datetime.strftime(third_friday, '%Y%m%d')
             elif len(expiry_string) == 8:
                 expiry_date = expiry_string
@@ -503,7 +503,7 @@ class ContractsApp(base.BaseApp):
     def _load_contracts(self):
         """Load saved contracts. 
         """
-        with open(constants.FILENAME_CONTRACTS, 'rb') as handle:
+        with open(ibk.constants.FILENAME_CONTRACTS, 'rb') as handle:
             self._saved_contract_details = pickle.load(handle)
 
     def _get_contract_from_dict(self, info):
@@ -526,7 +526,7 @@ class ContractsApp(base.BaseApp):
             the IB server. The file containing all of the 
             contract details is loaded in the __init__ method.
         """
-        with open(constants.FILENAME_CONTRACTS, 'wb') as handle:
+        with open(ibk.constants.FILENAME_CONTRACTS, 'wb') as handle:
             pickle.dump(self._saved_contract_details, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def _clean_position_contracts(self, target_contract):

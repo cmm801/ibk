@@ -1,7 +1,11 @@
 import time
 import threading
 
-import constants
+import ibk.constants
+import ibk.orders
+import ibk.contracts            
+import ibk.account            
+import ibk.marketdata
 
 
 class ConnectionInfo():
@@ -41,18 +45,14 @@ class ConnectionInfo():
                 clientId: (int) Optional - specifiy which client Id to
                     use for creating a new client or retrieving an open client
         """
-        if client_name == constants.MARKETDATA:
-            import marketdata
-            class_handle = marketdata.MarketDataApp
-        elif client_name == constants.ACCOUNT:
-            import account
-            class_handle = account.AccountApp
-        elif client_name == constants.ORDERS:
-            import orders
-            class_handle = orders.OrdersApp
-        elif client_name == constants.CONTRACTS:
-            import contracts
-            class_handle = contracts.ContractsApp
+        if client_name == ibk.constants.MARKETDATA:
+            class_handle = ibk.marketdata.MarketDataApp
+        elif client_name == ibk.constants.ACCOUNT:
+            class_handle = ibk.account.AccountApp
+        elif client_name == ibk.constants.ORDERS:
+            class_handle = ibk.orders.OrdersApp
+        elif client_name == ibk.constants.CONTRACTS:
+            class_handle = ibk.contracts.ContractsApp
         else:
             raise ValueError(f'Unsupported client: {client_name}')
 

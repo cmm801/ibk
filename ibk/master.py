@@ -1,5 +1,5 @@
-import constants
-import connect
+import ibk.constants
+import ibk.connect
 
 MARKETDATA_MAX_WAIT_TIME = 60
 
@@ -8,7 +8,7 @@ class Master(object):
     def __init__(self, port):
         super().__init__()
         self._port = port
-        self._connection_info = connect.ConnectionInfo(port)
+        self._connection_info = ibk.connect.ConnectionInfo(port)
 
     def disconnect(self):
         """ Disconnect from IB Gateway (Reset all connections). """
@@ -138,13 +138,25 @@ class Master(object):
             positions_df = self._include_mv_in_positions(positions_df)
         return positions_df, contracts
 
-    def get_account_details(self, group='All', tags="$LEDGER"):
-        """ Get the details of the account. """
-        return self.account_app.get_account_details(group=group,
+    def get_account_summary(self, group='All', tags="$LEDGER"):
+        """ Get the summary of the account. """
+        return self.account_app.get_account_summary(group=group,
                                                     tags=tags)
 
     def get_total_account_value(self):
         return self.account_app.get_total_account_value()
+
+    def get_portfolio_info(self, acct_num=None, max_wait_time=None):
+        """ Get the portfolio information, including positions and market value.
+        """
+        return self.account_app.get_portfolio_info(acct_num=acct_num,
+                                                   max_wait_time=max_wait_time)
+
+    def get_account_info(self, acct_num=None, max_wait_time=None):
+        """ Get the account information, including margin and cash balances.
+        """
+        return self.account_app.get_account_info(acct_num=acct_num,
+                                                 max_wait_time=max_wait_time)
 
     def get_position_size(self, localSymbol):
         """ Get the position size for a given local symbol.
@@ -268,19 +280,19 @@ class Master(object):
 
     @property
     def contracts_app(self):
-        return self._connection_info.get_connection(constants.CONTRACTS)
+        return self._connection_info.get_connection(ibk.constants.CONTRACTS)
 
     @property
     def orders_app(self):
-        return self._connection_info.get_connection(constants.ORDERS)
+        return self._connection_info.get_connection(ibk.constants.ORDERS)
 
     @property
     def marketdata_app(self):
-        return self._connection_info.get_connection(constants.MARKETDATA)
+        return self._connection_info.get_connection(ibk.constants.MARKETDATA)
 
     @property
     def account_app(self):
-        return self._connection_info.get_connection(constants.ACCOUNT)
+        return self._connection_info.get_connection(ibk.constants.ACCOUNT)
 
     ##################################################################
     # Private functions

@@ -30,10 +30,10 @@ from ibapi.contract import Contract, ContractDetails
 from ibapi.ticktype import TickTypeEnum
 from ibapi.common import BarData, TickAttrib
 
-import base
-import constants
-import helper
-import requestmanager
+import ibk.base
+import ibk.constants
+import ibk.helper
+import ibk.requestmanager
 
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
@@ -79,7 +79,7 @@ class AbstractDataRequest(ABC):
         self.__subrequests = None
         self.__req_ids = [None]
         self.__is_request_complete = False
-        self.__status = requestmanager.STATUS_REQUEST_NOT_PLACED
+        self.__status = ibk.requestmanager.STATUS_REQUEST_NOT_PLACED
         self.initialize_data()
 
     @abstractmethod
@@ -143,8 +143,8 @@ class AbstractDataRequest(ABC):
         return self.__req_ids
 
     def place_request(self):
-        if self.status != requestmanager.STATUS_REQUEST_ACTIVE:
-            self.status = requestmanager.STATUS_REQUEST_ACTIVE
+        if self.status != ibk.requestmanager.STATUS_REQUEST_ACTIVE:
+            self.status = ibk.requestmanager.STATUS_REQUEST_ACTIVE
             if len(self.subrequests) > 1:
                 [reqObj.place_request() for reqObj in self.subrequests]
             else:
@@ -262,7 +262,7 @@ class ScannerDataRequest(AbstractDataRequest):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_SCANNER
+        return ibk.requestmanager.RESTRICTION_CLASS_SCANNER
         
     def cancel_request(self):
         """ Method to cancel the scanner subscription.
@@ -327,7 +327,7 @@ class MarketDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_MKT_DATA_LINES
+        return ibk.requestmanager.RESTRICTION_CLASS_MKT_DATA_LINES
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -397,7 +397,7 @@ class FundamentalDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_FUNDAMENTAL
+        return ibk.requestmanager.RESTRICTION_CLASS_FUNDAMENTAL
 
     def _cancelStreamingSubscription(self):
         pass
@@ -459,11 +459,11 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        bar_size = helper.TimeHelper(self.frequency, 'frequency').total_seconds()
+        bar_size = ibk.helper.TimeHelper(self.frequency, 'frequency').total_seconds()
         if SMALL_BAR_CUTOFF_SIZE >= bar_size:
-            return requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
+            return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
         else:
-            return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
+            return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         df = self._get_dataframe_from_raw_data()
@@ -478,7 +478,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             est_datetimes = est_datetimes[rows_to_keep]
 
         # Add a UTC timestamp index
-        est_tz = pytz.timezone(constants.TIMEZONE_EST)
+        est_tz = pytz.timezone(ibk.constants.TIMEZONE_EST)
         utc_tz = pytz.utc
         utc_datetimes = [est_tz.localize(d).astimezone(utc_tz) for d in est_datetimes]
         utc_timestamps = [d.timestamp() for d in utc_datetimes]
@@ -491,7 +491,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             if self.end:
                 is_valid = False
                 msg = 'End date cannot be specified for streaming historical data requests.'
-            #elif 5 > helper.TimeHelper(self.frequency, 'frequency').total_seconds():
+            #elif 5 > ibk.helper.TimeHelper(self.frequency, 'frequency').total_seconds():
                 #is_valid = False
                 #msg = 'Bar frequency for streaming historical data requests must be >= 5 seconds.'
 
@@ -519,8 +519,8 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
                         requestObj = self.copy()
                         requestObj.reset_attributes()
                         requestObj.subrequests = [requestObj]
-                        requestObj.start = helper.convert_datetime_to_tws_date(period_start, constants.TIMEZONE_TWS)
-                        requestObj.end = helper.convert_datetime_to_tws_date(period_end, constants.TIMEZONE_TWS)
+                        requestObj.start = ibk.helper.convert_datetime_to_tws_date(period_start, ibk.constants.TIMEZONE_TWS)
+                        requestObj.end = ibk.helper.convert_datetime_to_tws_date(period_end, ibk.constants.TIMEZONE_TWS)
                         requestObj.duration = ""
                         requestObjList.append(requestObj)
                     return requestObjList
@@ -532,34 +532,34 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         if self.start and self.duration:
             raise ValueError('Duration and start cannot both be specified.')
         elif self.duration:
-            return helper.TimeHelper(self.duration, time_type='frequency').to_tws_durationStr()
+            return ibk.helper.TimeHelper(self.duration, time_type='frequency').to_tws_durationStr()
         elif self.start:
             # Get a TimeHelper object corresponding to the interval btwn start/end dates
             start_tws, end_tws = self.get_start_tws(), self.get_end_tws()
             delta = end_tws - start_tws
-            return helper.TimeHelper.from_timedelta(delta).get_min_tws_duration()
+            return ibk.helper.Timeibk.helper.from_timedelta(delta).get_min_tws_duration()
         else:
             return ""
 
     def barSizeSetting(self):
         if self.frequency:
-            return helper.TimeHelper(self.frequency, time_type='frequency').to_tws_barSizeSetting()
+            return ibk.helper.TimeHelper(self.frequency, time_type='frequency').to_tws_barSizeSetting()
         else:
             return ""
 
     def get_start_tws(self):
         if self.start:
-            return helper.convert_tws_date_to_datetime(self.start, constants.TIMEZONE_TWS)
+            return ibk.helper.convert_tws_date_to_datetime(self.start, ibk.constants.TIMEZONE_TWS)
         else:
             return None
 
     def get_end_tws(self):
         if not self.end:
             end_utc = pytz.utc.localize(datetime.datetime.utcnow())
-            tws_tzone = pytz.timezone(constants.TIMEZONE_TWS)
+            tws_tzone = pytz.timezone(ibk.constants.TIMEZONE_TWS)
             return end_utc.astimezone(tws_tzone)
         else:
-            return helper.convert_tws_date_to_datetime(self.end, constants.TIMEZONE_TWS)
+            return ibk.helper.convert_tws_date_to_datetime(self.end, ibk.constants.TIMEZONE_TWS)
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -579,17 +579,17 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             return _start + _delta
 
     def _is_duration_daily_frequency_or_lower(self, _delta):
-        th = helper.TimeHelper.from_timedelta(_delta)
-        dur = helper.TimeHelper(th.get_min_tws_duration(), 'duration')
+        th = ibk.helper.Timeibk.helper.from_timedelta(_delta)
+        dur = ibk.helper.TimeHelper(th.get_min_tws_duration(), 'duration')
         return dur.total_seconds() / dur.n >= 24 * 3600
 
     def _split_into_valid_periods(self, start_tws, end_tws):
-        bar_freq = helper.TimeHelper(self.frequency, time_type='frequency')
+        bar_freq = ibk.helper.TimeHelper(self.frequency, time_type='frequency')
         delta = end_tws - start_tws
 
         if bar_freq.units == 'days':
             # TWS convention seems to be that days begin and end at 18:00 EST
-            tz_info = pytz.timezone(constants.TIMEZONE_TWS)
+            tz_info = pytz.timezone(ibk.constants.TIMEZONE_TWS)
             start_tws = datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1),
                                                   datetime.time(18,0), tzinfo=tz_info)
             end_tws = datetime.datetime.combine(end_tws.date(), datetime.time(18,0), tzinfo=tz_info)
@@ -672,11 +672,11 @@ class StreamingBarRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        bar_size = helper.TimeHelper(self.frequency, 'frequency').total_seconds()
+        bar_size = ibk.helper.TimeHelper(self.frequency, 'frequency').total_seconds()
         if SMALL_BAR_CUTOFF_SIZE >= bar_size:
-            return requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
+            return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_LF
         else:
-            return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
+            return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -688,7 +688,7 @@ class StreamingBarRequest(AbstractDataRequestForContract):
 
     def barSizeInSeconds(self):
         if self.frequency:
-            return int(helper.TimeHelper(self.frequency, time_type='frequency').total_seconds())
+            return int(ibk.helper.TimeHelper(self.frequency, time_type='frequency').total_seconds())
         else:
             return -1
 
@@ -737,7 +737,7 @@ class StreamingTickDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_TICK_DATA
+        return ibk.requestmanager.RESTRICTION_CLASS_TICK_DATA
 
     @property
     def data_type(self):
@@ -812,7 +812,7 @@ class HistoricalTickDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
+        return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -838,7 +838,7 @@ class HeadTimeStampDataRequest(AbstractDataRequestForContract):
 
     # abstractmethod
     def append_data(self, new_data):
-        self.__market_data = helper.convert_tws_date_to_datetime(new_data)
+        self.__market_data = ibk.helper.convert_tws_date_to_datetime(new_data)
 
     # abstractmethod
     def _request_data(self, req_id):
@@ -858,10 +858,10 @@ class HeadTimeStampDataRequest(AbstractDataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return requestmanager.RESTRICTION_CLASS_NONE
+        return ibk.requestmanager.RESTRICTION_CLASS_NONE
 
 
-class MarketDataApp(base.BaseApp):
+class MarketDataApp(ibk.base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
 
@@ -871,7 +871,7 @@ class MarketDataApp(base.BaseApp):
     """
     def __init__(self):
         super(MarketDataApp, self).__init__()
-        self.request_manager = requestmanager.RequestManager()
+        self.request_manager = ibk.requestmanager.RequestManager()
 
     def get_open_streams(self):
         return self.request_manager.open_streams

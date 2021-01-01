@@ -20,16 +20,15 @@ import pytz
 import numpy as np
 import pandas as pd
 import ibapi
-import base
-
 from ibapi.contract import Contract
 
-import constants
+import ibk.constants
+import ibk.base
 
 MAX_WAIT_TIME = 5   # Max wait time in seconds. Large requests are slow
 
 
-class AccountApp(base.BaseApp):
+class AccountApp(ibk.base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
 
@@ -75,7 +74,7 @@ class AccountApp(base.BaseApp):
                                                  'size', 'cost', 'totCost', 'multiplier'])
         return positions_df, contracts
 
-    def get_account_details(self, group='All', tags="$LEDGER"):
+    def get_account_summary(self, group='All', tags="$LEDGER"):
         """ Get a DataFrame with the account details.
         """
         self._account_details = []
@@ -91,7 +90,7 @@ class AccountApp(base.BaseApp):
         return df
 
     def get_total_account_value(self):
-        acct_info = self.get_account_details(group='All', tags='$LEDGER').set_index('tag')
+        acct_info = self.get_account_summary(group='All', tags='$LEDGER').set_index('tag')
         key = 'NetLiquidationByCurrency'
         if key not in acct_info.index:
             return np.nan
@@ -317,7 +316,7 @@ class AccountApp(base.BaseApp):
         update_time = datetime.datetime.strptime(timestamp, '%H:%M')
         
         # Get the current date in the TWS time zone.
-        tws_tzinfo = pytz.timezone(constants.TIMEZONE_TWS)
+        tws_tzinfo = pytz.timezone(ibk.constants.TIMEZONE_TWS)
         curr_datetime_tws = tws_tzinfo.localize(datetime.datetime.now())
 
         # Convert the date and time info. Save the last update datetime

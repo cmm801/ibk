@@ -1,7 +1,7 @@
 import datetime
 import pathlib
 
-from private_constants import TWS_PAPER_ACCT_NUM, TWS_PROD_ACCT_NUM, FILENAME_CONTRACTS
+from ibk.private_constants import TWS_PAPER_ACCT_NUM, TWS_PROD_ACCT_NUM, FILENAME_CONTRACTS
 
 # The path to the interactivebrokers package
 IB_PATH = pathlib.Path(__file__).parent.absolute()  # The path to this module

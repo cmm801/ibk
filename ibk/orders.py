@@ -13,9 +13,9 @@ Classes
 import time
 import numpy as np
 import pandas as pd
-
 import ibapi.order
-import base
+
+import ibk.base
 
 MAX_WAIT_TIME = 5     # max time to wait for TWS response (in seconds)
 
@@ -217,7 +217,7 @@ class OrderGroup():
         return self
 
 
-class OrdersApp(base.BaseApp):
+class OrdersApp(ibk.base.BaseApp):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
     """

@@ -26,8 +26,8 @@ from ibapi import wrapper
 from ibapi.client import EClient
 from ibapi.common import TickerId
 
-import constants
-import connect
+import ibk.constants
+import ibk.connect
 
 
 def setup_logger():
@@ -88,7 +88,7 @@ class BaseApp(IBWrapper, IBClient):
                            'Check that the correct port has been specified and ',
                            'that the client Id is not already in use.\n',
                            errorString])
-            raise connect.ConnectionNotEstablishedError(msg)
+            raise ibk.connect.ConnectionNotEstablishedError(msg)
         elif errorCode == 200:
             # This error means that the contract request was ambiguous
             super().error(reqId, errorCode, errorString)            
@@ -138,10 +138,10 @@ class BaseApp(IBWrapper, IBClient):
     def account_number(self):
         """ Get the account number based on the port we used for the connection.
         """
-        if self.port == constants.PORT_PAPER:
-            return constants.TWS_PAPER_ACCT_NUM
-        elif self.port == constants.PORT_PROD:
-            return constants.TWS_PROD_ACCT_NUM
+        if self.port == ibk.constants.PORT_PAPER:
+            return ibk.constants.TWS_PAPER_ACCT_NUM
+        elif self.port == ibk.constants.PORT_PROD:
+            return ibk.constants.TWS_PROD_ACCT_NUM
         else:
             raise ValueError(f'Unsupported port: {self.port}')
 

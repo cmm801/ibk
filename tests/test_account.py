@@ -98,13 +98,13 @@ class AccountTest(unittest.TestCase):
                 self.assertEqual(acct_num, constants.TWS_PAPER_ACCT_NUM,
                     msg=f'The account number is unexpected: {acct_num}.')
 
-    def test_get_account_details(self):
-        """ Check that the total account value is correct.
+    def test_get_account_summary(self):
+        """ Check that the account summary can be obtained.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
     
         # Get the account details
-        acct_df = self.app.get_account_details().set_index('tag')
+        acct_df = self.app.get_account_summary().set_index('tag')
         
         # Check that the account value is as expected
         tot_acct_val = self.app.get_total_account_value()
@@ -120,7 +120,21 @@ class AccountTest(unittest.TestCase):
             ctr += 1            
             with self.subTest(i=ctr):
                 self.assertIn(col, acct_df.columns,
-                    msg = f'The account details do not include column: {col}')
+                    msg = f'The account summary does not include column: {col}')
+
+    def test_get_portfolio_info(self):
+        """ Test the method to 'get_position_size'. """
+        print(f"\nRunning test method {self._testMethodName}\n")
+        print('\n###################################################################')
+        print('Need to implement test for "get_portfolio_info" in "test_account.py".')
+        print('###################################################################')
+
+    def test_get_account_info(self):
+        """ Test the method to 'get_position_size'. """
+        print(f"\nRunning test method {self._testMethodName}\n")
+        print('\n###################################################################')
+        print('Need to implement test for "get_account_info" in "test_account.py".')
+        print('###################################################################')
 
     def test_get_position_size(self):
         """ Test the method to 'get_position_size'. """
