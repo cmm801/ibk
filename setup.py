@@ -1,11 +1,11 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='ibk',
     version='0.1.0',
     author='Christopher Miller',
     author_email='cmm801@gmail.com',
-    packages=['ibk'],
+    packages=find_packages(),
     scripts=[],
     url='http://pypi.python.org/pypi/ibk/',
     license='MIT',
