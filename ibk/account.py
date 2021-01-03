@@ -177,7 +177,13 @@ class AccountApp(ibk.base.BaseApp):
         for ccy in cash_balances.index:
             if ccy != 'BASE':
                 symbol = f'{ccy}.USD'
-
+                if symbol not in ptf_info.index:
+                    fx_rate = float(acct_info.loc[('ExchangeRate', ccy), 'value'])
+                    empty_row = pd.Series(dict(currency=ccy, position=0.0, marketPrice=fx_rate,
+                                               marketValue=np.nan, averageCost=np.nan,
+                                               unrealizedPNL=np.nan, realizedPNL=np.nan))
+                    ptf_info.loc[symbol] = empty_row
+                
                 # Keep track of the original position size
                 orig_pos = ptf_info.loc[symbol, 'position']
 
