@@ -11,5 +11,7 @@ setup(
     license='MIT',
     description='A package for working with Interactive Brokers TWS API.',
     long_description=open('README.md').read(),
-    install_requires=[],
+    install_requires=[
+        'numpy', 'pandas', 'ibapi'
+        ],
 )

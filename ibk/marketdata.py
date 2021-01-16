@@ -465,7 +465,13 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         else:
             return ibk.requestmanager.RESTRICTION_CLASS_HISTORICAL_HF
 
-    def get_dataframe(self):
+    def get_dataframe(self, timestamp=False):
+        """ Get a DataFrame with the time series data returned from the request.
+        
+            Arguments:
+                timestamp: (bool) whether to return the index in timestamp format (True)
+                    or as datetime objects (False).
+        """
         df = self._get_dataframe_from_raw_data()
 
         # Remove observations outside of the range
@@ -477,12 +483,17 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             df = df.iloc[rows_to_keep]
             est_datetimes = est_datetimes[rows_to_keep]
 
-        # Add a UTC timestamp index
-        est_tz = pytz.timezone(ibk.constants.TIMEZONE_EST)
-        utc_tz = pytz.utc
-        utc_datetimes = [est_tz.localize(d).astimezone(utc_tz) for d in est_datetimes]
-        utc_timestamps = [d.timestamp() for d in utc_datetimes]
-        df.index = pd.Index(utc_timestamps, name='utc_timestamp')
+        if timestamp:
+            # Add a UTC timestamp index
+            est_tz = pytz.timezone(ibk.constants.TIMEZONE_EST)
+            utc_tz = pytz.utc
+            utc_datetimes = [est_tz.localize(d).astimezone(utc_tz) for d in est_datetimes]
+            utc_timestamps = [d.timestamp() for d in utc_datetimes]
+            df.index = pd.Index(utc_timestamps, name='utc_timestamp')
+        else:
+            df.set_index('date', inplace=True)
+            df.index = pd.DatetimeIndex(df.index)
+
         return df
 
     def is_valid_request(self):
@@ -537,7 +548,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             # Get a TimeHelper object corresponding to the interval btwn start/end dates
             start_tws, end_tws = self.get_start_tws(), self.get_end_tws()
             delta = end_tws - start_tws
-            return ibk.helper.Timeibk.helper.from_timedelta(delta).get_min_tws_duration()
+            return ibk.helper.TimeHelper.from_timedelta(delta).get_min_tws_duration()
         else:
             return ""
 
@@ -579,7 +590,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             return _start + _delta
 
     def _is_duration_daily_frequency_or_lower(self, _delta):
-        th = ibk.helper.Timeibk.helper.from_timedelta(_delta)
+        th = ibk.helper.TimeHelper.from_timedelta(_delta)
         dur = ibk.helper.TimeHelper(th.get_min_tws_duration(), 'duration')
         return dur.total_seconds() / dur.n >= 24 * 3600
 

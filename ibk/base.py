@@ -79,7 +79,7 @@ class BaseApp(IBWrapper, IBClient):
         IBWrapper.__init__(self)
         IBClient.__init__(self, app_wrapper=self)
         self.__req_id = None
-
+        
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
         """

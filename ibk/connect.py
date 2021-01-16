@@ -87,7 +87,7 @@ class ConnectionInfo():
     def _connect_and_check(self, class_handle, clientId):
         """Attempt to connect an application. Return None if no connection is established."""
         app = class_handle()
-        app.connect("127.0.0.1", port=self.port, clientId=clientId)
+        app.connect(ibk.constants.HOST_IP, port=self.port, clientId=clientId)
         _thread = threading.Thread(target=app.run)
         _thread.start()
         t = 0
