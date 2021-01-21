@@ -161,11 +161,11 @@ class ContractsApp(ibk.base.BaseApp):
             self._cache_contract_details(_cd)
             return _cd
 
-    def find_next_live_future_contract(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+    def find_next_live_futures_contract(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
         """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
         
             Example usage:
-            self.find_next_live_future_contract(symbol='ES', exchange='SMART')
+            self.find_next_live_futures_contract(symbol='ES', exchange='SMART')
         """
         sec_type = kwargs.get('secType', 'FUT')
         if sec_type != 'FUT':
@@ -187,6 +187,25 @@ class ContractsApp(ibk.base.BaseApp):
         
         # Return the next contract
         return next_contract
+
+    def get_continuous_futures_contract_details(self, symbol, **kwargs):
+        """ Get the continuous futures ContractDetails for a given symbol.
+        """
+        # Get the contract details for a given symbol
+        contract_details = self.find_matching_contract_details(secType='CONTFUT',
+                                                               symbol=symbol, **kwargs)
+
+        # Filter out QBALGO contracts if there are multiple matches
+        if len(contract_details) > 1:
+            contract_details = [_cd for _cd in contract_details if \
+                                _cd.contract.exchange != 'QBALGO']
+            
+        if len(contract_details) == 0:
+            return None
+        elif len(contract_details) == 1:
+            return contract_details[0]
+        else:
+            raise ValueError('Expected a single match, but found multiple possible matches.')
 
     def get_market_rule_info(self, rule_ids, max_wait_time=None):
         """Get market rule information based on rule ids.

@@ -5,8 +5,8 @@ import pandas as pd
 
 import ibapi
 
-import constants
-import master
+import ibk.constants
+import ibk.master
 
 
 class AccountTest(unittest.TestCase):
@@ -26,11 +26,11 @@ class AccountTest(unittest.TestCase):
             that will be used by more than one of the test methods, and
             that cannot be built quickly on-the-fly.
         """
-        PORT = constants.PORT_PAPER
+        PORT = ibk.constants.PORT_PAPER
 
         # After execution, TWS will prompt you to accept the connection
         # The ERROR simply confirms that there is a connection to the market data.
-        cls.app = master.Master(port=PORT)
+        cls.app = ibk.master.Master(port=PORT)
 
     @classmethod
     def tearDownClass(cls):
@@ -95,7 +95,7 @@ class AccountTest(unittest.TestCase):
         for acct_num in positions_df.account.values:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertEqual(acct_num, constants.TWS_PAPER_ACCT_NUM,
+                self.assertEqual(acct_num, ibk.constants.TWS_PAPER_ACCT_NUM,
                     msg=f'The account number is unexpected: {acct_num}.')
 
     def test_get_account_summary(self):

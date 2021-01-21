@@ -7,10 +7,10 @@ import pandas as pd
 
 import ibapi
 
-import constants
-import master
-import marketdata
-import requestmanager
+import ibk.constants
+import ibk.master
+import ibk.marketdata
+import ibk.requestmanager
 
 
 class MarketDataTest(unittest.TestCase):
@@ -39,11 +39,11 @@ class MarketDataTest(unittest.TestCase):
             that will be used by more than one of the test methods, and
             that cannot be built quickly on-the-fly.
         """
-        PORT = constants.PORT_PAPER
+        PORT = ibk.constants.PORT_PAPER
 
         # After execution, TWS will prompt you to accept the connection
         # The ERROR simply confirms that there is a connection to the market data.
-        cls.app = master.Master(port=PORT)
+        cls.app = ibk.master.Master(port=PORT)
         cls.mdapp = cls.app.marketdata_app
 
     @classmethod
@@ -85,7 +85,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_NOT_PLACED)
+                self.assertEqual(reqObj.status, ibk.requestmanager.STATUS_REQUEST_NOT_PLACED)
 
         # Place requests
         [reqObj.place_request() for reqObj in self.reqObjList]
@@ -94,7 +94,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_ACTIVE)
+                self.assertEqual(reqObj.status, ibk.requestmanager.STATUS_REQUEST_ACTIVE)
 
         # Wait a moment for requests to propogate
         time.sleep(1)
@@ -111,7 +111,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertEqual(reqObj.status, requestmanager.STATUS_REQUEST_COMPLETE)
+                self.assertEqual(reqObj.status, ibk.requestmanager.STATUS_REQUEST_COMPLETE)
 
         # Check that all streams are closed now
         ctr += 1
@@ -144,7 +144,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertIsInstance(reqObj, marketdata.MarketDataRequest)
+                self.assertIsInstance(reqObj, ibk.marketdata.MarketDataRequest)
 
             # Wait for the request to be completed
             while not reqObj.get_data():
@@ -189,7 +189,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertIsInstance(reqObj, marketdata.HistoricalDataRequest)
+                self.assertIsInstance(reqObj, ibk.marketdata.HistoricalDataRequest)
 
             # Wait for the request to be completed
             while not len(reqObj.get_data()[0]) == 10:
@@ -235,7 +235,7 @@ class MarketDataTest(unittest.TestCase):
         for reqObj in self.reqObjList:
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertIsInstance(reqObj, marketdata.HistoricalDataRequest)
+                self.assertIsInstance(reqObj, ibk.marketdata.HistoricalDataRequest)
 
             # Wait for the request to be completed
             while not len(reqObj.get_data()[0]) == 10:
@@ -316,7 +316,7 @@ class MarketDataTest(unittest.TestCase):
         print(f"\nRunning test method {self._testMethodName}\n")
 
         # Get a single contract
-        contractList = [self.app.contracts_app.find_next_live_future_contract(symbol='VIX',
+        contractList = [self.app.contracts_app.find_next_live_futures_contract(symbol='VIX',
                                                                               exchange='CFE')]
         
         # Create the request object
@@ -374,7 +374,7 @@ class MarketDataTest(unittest.TestCase):
         print(f"\nRunning test method {self._testMethodName}\n")
 
         # Get a single contract
-        contractList = [self.app.contracts_app.find_next_live_future_contract(symbol='ES',
+        contractList = [self.app.contracts_app.find_next_live_futures_contract(symbol='ES',
                                                                               exchange='GLOBEX')]
 
         # Create the request object
@@ -471,7 +471,7 @@ class MarketDataTest(unittest.TestCase):
             # Check the 
             ctr += 1
             with self.subTest(i=ctr):
-                self.assertIsInstance(reqObj, marketdata.MarketDataRequest)
+                self.assertIsInstance(reqObj, ibk.marketdata.MarketDataRequest)
 
             ctr += 1
             with self.subTest(i=ctr):
@@ -517,7 +517,7 @@ class MarketDataTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertIsInstance(reqObj, marketdata.ScannerDataRequest)
+            self.assertIsInstance(reqObj, ibk.marketdata.ScannerDataRequest)
 
         # Wait for the request to be completed
         while not len(reqObj.get_data()) == n_rows:

@@ -163,6 +163,13 @@ class AbstractDataRequest(ABC):
                 req_status = self.request_manager.check_if_ready(self)
                 if req_status >= -1e-6:
                     time.sleep(abs(req_status))
+                elif req_status == ibk.requestmanager.ERROR_EXCEED_MAX_SIMUL_HIST_REQUESTS:
+                    # Sleep if we are being blocked by the max # of simulteous requests
+                    print('Max # of simultaeous requests. Waiting for some requests to complete...')
+                    while req_status == ibk.requestmanager.ERROR_EXCEED_MAX_SIMUL_HIST_REQUESTS:
+                        time.sleep(0.2)
+                        req_status = self.request_manager.check_if_ready(self)
+                    print('Proceeding with the historical data request...')
                 else:
                     raise ValueError(f'Error code received on placing request: {req_status}')
 
@@ -407,6 +414,10 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, frequency="",
                                  start="", end="",
                                  duration="", use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
+        # Initialize some private variables
+        self._start = self._end = None
+        
+        # Save the input variables
         self.start = start
         self.end = end
         self.duration = duration             # e.g., 1s, 1M (1 minute), 1d, 1h, etc.
@@ -416,6 +427,30 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         
         # Call the superclass contructor
         super(HistoricalDataRequest, self).__init__(parent_app, contract, is_snapshot)
+
+    @property
+    def start(self):
+        return self._start
+    
+    @start.setter
+    def start(self, d):
+        if d is None or not d:
+            self._start = ''
+        else:
+            dt = ibk.helper.convert_to_datetime(d)
+            self._start = dt.replace(tzinfo=None)
+
+    @property
+    def end(self):
+        return self._end
+    
+    @end.setter
+    def end(self, d):
+        if d is None or not d:
+            self._end = ''
+        else:
+            dt = ibk.helper.convert_to_datetime(d)
+            self._end = dt.replace(tzinfo=None)
 
     # abstractmethod
     def initialize_data(self):
@@ -560,7 +595,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
     def get_start_tws(self):
         if self.start:
-            return ibk.helper.convert_tws_date_to_datetime(self.start, ibk.constants.TIMEZONE_TWS)
+            return ibk.helper.convert_datestr_to_datetime(self.start, ibk.constants.TIMEZONE_TWS)
         else:
             return None
 
@@ -570,7 +605,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
             tws_tzone = pytz.timezone(ibk.constants.TIMEZONE_TWS)
             return end_utc.astimezone(tws_tzone)
         else:
-            return ibk.helper.convert_tws_date_to_datetime(self.end, ibk.constants.TIMEZONE_TWS)
+            return ibk.helper.convert_datestr_to_datetime(self.end, ibk.constants.TIMEZONE_TWS)
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -782,12 +817,55 @@ class HistoricalTickDataRequest(AbstractDataRequestForContract):
     def __init__(self, parent_app, contract, is_snapshot, start="", end="", use_rth=DEFAULT_USE_RTH,
                                  data_type="TRADES", number_of_ticks=1000, ignore_size=True):
         super(HistoricalTickDataRequest, self).__init__(parent_app, contract, is_snapshot)
-        self.startDateTime = start
-        self.endDateTime = end
+        
+        # Initialize private variables
+        self._start = self._end = None
+
+        #
+        self.start = start
+        self.end = end
         self.whatToShow = data_type
         self.numberOfTicks = number_of_ticks
         self.useRTH = use_rth
         self.ignoreSize = ignore_size   # Ignore ticks with just size updates (no price chg.)
+
+    @property
+    def start(self):
+        return self._start
+    
+    @start.setter
+    def start(self, d):
+        if d is None or not d:
+            self._start = ''
+        else:
+            dt = ibk.helper.convert_to_datetime(d)
+            self._start = dt.replace(tzinfo=None)
+
+    @property
+    def end(self):
+        return self._end
+    
+    @end.setter
+    def end(self, d):
+        if d is None or not d:
+            self._end = ''
+        else:
+            dt = ibk.helper.convert_to_datetime(d)
+            self._end = dt.replace(tzinfo=None)
+
+    @property
+    def startDateTime(self):
+        if not self.start:
+            return ''
+        else:
+            return ibk.helper.convert_datetime_to_tws_date(self.start)
+
+    @property
+    def endDateTime(self):
+        if not self.end:
+            return ''
+        else:
+            return ibk.helper.convert_datetime_to_tws_date(self.end)
 
     # abstractmethod
     def initialize_data(self):
@@ -849,7 +927,8 @@ class HeadTimeStampDataRequest(AbstractDataRequestForContract):
 
     # abstractmethod
     def append_data(self, new_data):
-        self.__market_data = ibk.helper.convert_tws_date_to_datetime(new_data)
+        dt = ibk.helper.convert_datestr_to_datetime(new_data)
+        self.__market_data = dt.replace(tzinfo=None)
 
     # abstractmethod
     def _request_data(self, req_id):

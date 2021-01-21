@@ -7,9 +7,8 @@ import pandas as pd
 
 import ibapi
 
-import constants
-import master
-import orders
+import ibk.constants
+import ibk.orders
 
 
 class MockApplication():
@@ -35,10 +34,10 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        single_order = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         ctr = 0
         with self.subTest(i=ctr):        
@@ -50,24 +49,24 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
 
     def test_create_order_group_multiple(self):
-        """ Test that we can create an OrderGroup object with multiple contracts/orders.
+        """ Test that we can create an OrderGroup object with multiple contracts/ibk.orders.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')        
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
 
-        order_group = orders.OrderGroup([cnt_1, cnt_2], [ord_1, ord_2], app=mock_app)
+        order_group = ibk.orders.OrderGroup([cnt_1, cnt_2], [ord_1, ord_2], app=mock_app)
         
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(order_group, orders.OrderGroup, msg='Incorrect class instance.')
+            self.assertIsInstance(order_group, ibk.orders.OrderGroup, msg='Incorrect class instance.')
 
         ctr += 1
         with self.subTest(i=ctr):
@@ -84,21 +83,21 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
 
     def test_create_order_group_single(self):
         """ Test that we can create an OrderGroup object with a single contract/order.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        order_group = orders.OrderGroup(cnt_1, ord_1, app=mock_app)
+        order_group = ibk.orders.OrderGroup(cnt_1, ord_1, app=mock_app)
         
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(order_group, orders.OrderGroup, msg='Incorrect class instance.')
+            self.assertIsInstance(order_group, ibk.orders.OrderGroup, msg='Incorrect class instance.')
 
         ctr += 1
         with self.subTest(i=ctr):
@@ -115,25 +114,25 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
 
     def test_combine_single_orders(self):
         """ Test that we can combine two SingleOrder objects.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWW')        
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
         so_3 = so_1 + so_2
 
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(so_3, orders.OrderGroup, msg='Incorrect class instance.')
+            self.assertIsInstance(so_3, ibk.orders.OrderGroup, msg='Incorrect class instance.')
 
         ctr += 1
         with self.subTest(i=ctr):
@@ -150,17 +149,17 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(orders.STATUS_NOT_PLACED, so_3.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, so_3.status, msg='Unexpected status.')
 
     def test_cast_single_order(self):
         """ Test that we can cast a SingleOrder object to an OrderGroup object.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')        
-        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        single_order = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
         order_group = single_order.to_group()
 
         ctr = 0
@@ -173,24 +172,24 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):        
-            self.assertEqual(orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, order_group.status, msg='Unexpected status.')
 
     def test_single_order_place_order(self):
         """ Test that we can place an order for a SingleOrder object.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='ESM0')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         with self.subTest(i=0):
-            self.assertEqual(orders.STATUS_NOT_PLACED, so_1.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, so_1.status, msg='Unexpected status.')
 
         with self.subTest(i=1):
             so_1.place()            
-            self.assertEqual(orders.STATUS_PLACED, so_1.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_PLACED, so_1.status, msg='Unexpected status.')
 
         with self.subTest(i=2):
             with self.assertRaises(ValueError):
@@ -201,21 +200,21 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='GLD')
         cnt_2 = self._create_contract(conId=2, symbol='VXX')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
         group_order = so_1 + so_2
 
         with self.subTest(i=0):
-            self.assertEqual(orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
 
         with self.subTest(i=1):
             group_order.place()
-            self.assertEqual(orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
 
         with self.subTest(i=2):
             with self.assertRaises(ValueError):
@@ -226,13 +225,13 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        single_order = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
 
         with self.subTest(i=0):
-            self.assertEqual(orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, single_order.status, msg='Unexpected status.')
 
         with self.subTest(i=1):
             with self.assertRaises(ValueError):
@@ -240,11 +239,11 @@ class OrderGroupTest(unittest.TestCase):
 
         with self.subTest(i=2):
             single_order.place()            
-            self.assertEqual(orders.STATUS_PLACED, single_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_PLACED, single_order.status, msg='Unexpected status.')
 
         with self.subTest(i=3):
             single_order.cancel()            
-            self.assertEqual(orders.STATUS_CANCELLED, single_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_CANCELLED, single_order.status, msg='Unexpected status.')
 
         with self.subTest(i=4):
             with self.assertRaises(ValueError):
@@ -255,17 +254,17 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
         group_order = so_1 + so_2
 
         with self.subTest(i=0):
-            self.assertEqual(orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_NOT_PLACED, group_order.status, msg='Unexpected status.')
 
         with self.subTest(i=1):
             with self.assertRaises(ValueError):
@@ -273,11 +272,11 @@ class OrderGroupTest(unittest.TestCase):
 
         with self.subTest(i=2):
             group_order.place()            
-            self.assertEqual(orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_PLACED, group_order.status, msg='Unexpected status.')
 
         with self.subTest(i=3):
             group_order.cancel()            
-            self.assertEqual(orders.STATUS_CANCELLED, group_order.status, msg='Unexpected status.')
+            self.assertEqual(ibk.orders.STATUS_CANCELLED, group_order.status, msg='Unexpected status.')
 
         with self.subTest(i=4):
             with self.assertRaises(ValueError):
@@ -288,16 +287,16 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=1, symbol='SPY')
         cnt_2 = self._create_contract(conId=2, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
         
         # Specify that the second order has been placed
-        so_2.status = orders.STATUS_PLACED
+        so_2.status = ibk.orders.STATUS_PLACED
 
         # Check that if the status flags are different, we cannot combine two orders into a GroupOrder
         with self.assertRaises(ValueError):
@@ -308,13 +307,13 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=6, action='SELL', totalQuantity=2, orderType='MKT')        
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
         so_3 = so_1 + so_2
 
         # Place the order
@@ -322,27 +321,27 @@ class OrderGroupTest(unittest.TestCase):
 
         # The two SingleOrder objects have different status flags,
         #    so when we combine them the status should be 'incompatible'
-        self.assertEqual(orders.STATUS_INCOMPATIBLE, so_3.status, msg='Unexpected status.')
+        self.assertEqual(ibk.orders.STATUS_INCOMPATIBLE, so_3.status, msg='Unexpected status.')
 
     def test_order_group_from_single_orders(self):
         """ Test that we can create a GroupOrder from a SingleOrder object.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=123, symbol='SPY')
         ord_1 = self._create_order(orderId=12, action='BUY', totalQuantity=1, orderType='MKT')
-        single_order = orders.SingleOrder(cnt_1, ord_1, mock_app)
+        single_order = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
         
         # Place the order
         single_order.place()
 
         # Create GroupOrder
-        order_group = orders.OrderGroup.from_single_orders(single_order)
+        order_group = ibk.orders.OrderGroup.from_single_orders(single_order)
 
         ctr = 0
         with self.subTest(i=ctr):
-            self.assertIsInstance(order_group, orders.OrderGroup, msg='Incorrect class instance.')
+            self.assertIsInstance(order_group, ibk.orders.OrderGroup, msg='Incorrect class instance.')
 
         ctr += 1
         with self.subTest(i=ctr):
@@ -354,14 +353,14 @@ class OrderGroupTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(orders.STATUS_PLACED, order_group.status, msg='Status mismatch.')
+            self.assertEqual(ibk.orders.STATUS_PLACED, order_group.status, msg='Status mismatch.')
 
     def test_combining_objects(self):
         """ Test that we can combine SingleOrder and OrderGroup objects using "+".
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
         cnt_3 = self._create_contract(conId=1221, symbol='GLD')
@@ -370,10 +369,10 @@ class OrderGroupTest(unittest.TestCase):
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
-        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
-        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = ibk.orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = ibk.orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         ctr = 0
         with self.subTest(i=ctr):
@@ -400,7 +399,7 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
         cnt_3 = self._create_contract(conId=1221, symbol='GLD')
@@ -409,10 +408,10 @@ class OrderGroupTest(unittest.TestCase):
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
-        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
-        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = ibk.orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = ibk.orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         # Create a group from the first order
         order_group = so_1.to_group()
@@ -432,7 +431,7 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12, symbol='SPY')
         cnt_2 = self._create_contract(conId=22, symbol='EWJ')
         cnt_3 = self._create_contract(conId=1221, symbol='GLD')
@@ -441,10 +440,10 @@ class OrderGroupTest(unittest.TestCase):
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='MKT')
         ord_3 = self._create_order(orderId=3, action='BUY', totalQuantity=2, orderType='LMT')
         ord_4 = self._create_order(orderId=4, action='SELL', totalQuantity=5, orderType='LMT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
-        so_3 = orders.SingleOrder(cnt_3, ord_3, mock_app)
-        so_4 = orders.SingleOrder(cnt_4, ord_4, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = ibk.orders.SingleOrder(cnt_3, ord_3, mock_app)
+        so_4 = ibk.orders.SingleOrder(cnt_4, ord_4, mock_app)
 
         # Create a group from the first order
         order_group = (so_1 + so_2) + so_3
@@ -467,16 +466,16 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
         cnt_2 = self._create_contract(conId=2124142, symbol='IBM')
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
         ord_3 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
-        so_1 = orders.SingleOrder(cnt_1, ord_1, mock_app)
-        so_2 = orders.SingleOrder(cnt_2, ord_2, mock_app)
-        so_3 = orders.SingleOrder(cnt_2, ord_3, mock_app)
-        so_4 = orders.SingleOrder(cnt_2, ord_1, mock_app)
+        so_1 = ibk.orders.SingleOrder(cnt_1, ord_1, mock_app)
+        so_2 = ibk.orders.SingleOrder(cnt_2, ord_2, mock_app)
+        so_3 = ibk.orders.SingleOrder(cnt_2, ord_3, mock_app)
+        so_4 = ibk.orders.SingleOrder(cnt_2, ord_1, mock_app)
 
         with self.subTest(i=0):
             self.assertNotEqual(so_1, so_2)
@@ -495,20 +494,20 @@ class OrderGroupTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        mock_app = MockApplication(port=constants.PORT_PAPER)
+        mock_app = MockApplication(port=ibk.constants.PORT_PAPER)
         cnt_1 = self._create_contract(conId=12121, symbol='AAPL')
         cnt_2 = self._create_contract(conId=2124142, symbol='IBM')        
         ord_1 = self._create_order(orderId=1, action='BUY', totalQuantity=1, orderType='MKT')
         ord_2 = self._create_order(orderId=2, action='SELL', totalQuantity=2, orderType='LMT')
         ord_3 = self._create_order(orderId=3, action='SELL', totalQuantity=2, orderType='LMT')
 
-        single_0 = orders.SingleOrder(cnt_1, ord_2, app=mock_app)
-        group_0 = orders.OrderGroup(cnt_1, ord_2, app=mock_app)
-        group_1 = orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
-        group_2 = orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
-        group_3 = orders.OrderGroup([cnt_1, cnt_1], [ord_2, ord_1], app=mock_app)
-        group_4 = orders.OrderGroup([cnt_2, cnt_1], [ord_2, ord_1], app=mock_app)
-        group_5 = orders.OrderGroup([cnt_1, cnt_1, cnt_1], [ord_1, ord_2, ord_3], app=mock_app)
+        single_0 = ibk.orders.SingleOrder(cnt_1, ord_2, app=mock_app)
+        group_0 = ibk.orders.OrderGroup(cnt_1, ord_2, app=mock_app)
+        group_1 = ibk.orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
+        group_2 = ibk.orders.OrderGroup([cnt_1, cnt_1], [ord_1, ord_2], app=mock_app)
+        group_3 = ibk.orders.OrderGroup([cnt_1, cnt_1], [ord_2, ord_1], app=mock_app)
+        group_4 = ibk.orders.OrderGroup([cnt_2, cnt_1], [ord_2, ord_1], app=mock_app)
+        group_5 = ibk.orders.OrderGroup([cnt_1, cnt_1, cnt_1], [ord_1, ord_2, ord_3], app=mock_app)
 
         with self.subTest(i=0):
             self.assertEqual(group_1, group_2)

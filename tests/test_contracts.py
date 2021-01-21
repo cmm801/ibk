@@ -5,8 +5,8 @@ import pandas as pd
 
 import ibapi
 
-import constants
-import master
+import ibk.constants
+import ibk.master
 
 
 class ContractsTest(unittest.TestCase):
@@ -26,11 +26,11 @@ class ContractsTest(unittest.TestCase):
             that will be used by more than one of the test methods, and
             that cannot be built quickly on-the-fly.
         """
-        PORT = constants.PORT_PAPER
+        PORT = ibk.constants.PORT_PAPER
 
         # After execution, TWS will prompt you to accept the connection
         # The ERROR simply confirms that there is a connection to the market data.
-        cls.app = master.Master(port=PORT)
+        cls.app = ibk.master.Master(port=PORT)
 
     @classmethod
     def tearDownClass(cls):
@@ -238,14 +238,14 @@ class ContractsTest(unittest.TestCase):
         with self.subTest(i=ctr):
             self.assertTrue('Computers' == _cd.category, msg='Category mismatch.')
 
-    def test_find_next_live_future_contract(self):
+    def test_find_next_live_futures_contract(self):
         """ Check that the next future can be obtained accurately.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
         # Get the next liquid ES contract
         min_days_until_expiry = 10
-        _contract = self.app.find_next_live_future_contract(min_days_until_expiry=min_days_until_expiry, 
+        _contract = self.app.find_next_live_futures_contract(min_days_until_expiry=min_days_until_expiry, 
                                                    symbol='ES', exchange='GLOBEX', currency='USD')
 
         # Check that the contract expiry is in the future

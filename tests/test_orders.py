@@ -6,8 +6,8 @@ import pandas as pd
 
 import ibapi
 
-import constants
-import master
+import ibk.constants
+import ibk.master
 
 
 class OrdersTest(unittest.TestCase):
@@ -31,14 +31,14 @@ class OrdersTest(unittest.TestCase):
             that will be used by more than one of the test methods, and
             that cannot be built quickly on-the-fly.
         """
-        PORT = constants.PORT_PAPER
+        PORT = ibk.constants.PORT_PAPER
 
         # After execution, TWS will prompt you to accept the connection
         # The ERROR simply confirms that there is a connection to the market data.
-        cls.app = master.Master(port=PORT)
+        cls.app = ibk.master.Master(port=PORT)
         
         # Get the next liquid ES contract
-        cls.ES_contract = cls.app.find_next_live_future_contract(min_days_until_expiry=10,
+        cls.ES_contract = cls.app.find_next_live_futures_contract(min_days_until_expiry=10,
                                                 symbol='ES', exchange='GLOBEX', currency='USD')
         # Get a contract for Apple stock
         cls.AAPL_contract = cls.app.get_contract('AAPL')

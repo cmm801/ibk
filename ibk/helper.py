@@ -2,23 +2,68 @@ import datetime
 import pytz
 import re
 import math
+import pandas as pd
 
 import ibk.constants
 
 
-def convert_tws_date_to_datetime(d, tz_name=None):
-    """Extract datetime information from IB's date format."""
-    if len(d) == 8:
-        fmt = '%Y%m%d'
+def convert_to_datetime(input_dt, tz_name=None):
+    """ Convert an input date object into a datetime object.
+    
+        Accepts inputs of type string, datetime.datetime, datetime.date, 
+          and pandas Timestamp.
+        Returns a datetime.datetime object.
+    """
+    if isinstance(input_dt, datetime.datetime):
+        return input_dt
+    elif isinstance(input_dt, datetime.date):
+        t = datetime.time(0)
+        return datetime.datetime.combine(input_dt, t)
+    elif isinstance(input_dt, str):
+        return convert_datestr_to_datetime(input_dt, tz_name=tz_name)
+    elif isinstance(input_dt, pd.Timestamp):
+        return input_dt.to_pydatetime()
     else:
-        fmt = '%Y%m%d %H:%M:%S'
-
-    dt = datetime.datetime.strptime(d, fmt)
+        raise ValueError('Unsupported date type: {}'.format(input_dt.__class__))
+    
+def convert_datestr_to_datetime(input_datestr, tz_name=None):
+    """ Convert a string representing a date into a datetime.
+        
+        If the date has time zone information attached, then
+        the result will be converted to the target time zone.
+        Arguments:
+            input_datestr: (str) a string representing a date or 
+                datetime. Time zone information can optionally be
+                included at the end of the string. If no time zone
+                information is provided, then no conversion will
+                be performed.
+            tz_name: (str) the target time zone name to which
+                the input date/time should be converted. If no
+                target is provided, the target time zone will be
+                assumed to be the TWS time zone.
+    """
     if tz_name is None:
-        return dt
+        tz_name = ibk.constants.TIMEZONE_TWS
+    tz_tgt = pytz.timezone(tz_name)
+
+    parts = [x for x in input_datestr.split(' ') if x]
+    if re.match('[a-zA-Z]', parts[-1]) is not None:
+        datestr = ' '.join(parts[:-1])
+
+        # Get timezone objects
+        tz_loc = pytz.timezone(parts[-1])
+
+        # Get the date in the local timezone
+        dt = pd.Timestamp(datestr).to_pydatetime()    
+        dt_loc = tz_loc.localize(dt)
+
+        # Convert to target time zone
+        dt_tgt_full = dt_loc.astimezone(tz_tgt)
     else:
-        tzone = pytz.timezone(tz_name)
-        return tzone.localize(dt)
+        datestr = ' '.join(parts)
+        dt_tgt = tz_tgt.localize(pd.Timestamp(datestr).to_pydatetime())        
+
+    return dt_tgt
 
 def convert_datetime_to_tws_date(d, tws_tz_name=None):
     if tws_tz_name is not None:

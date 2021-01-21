@@ -73,7 +73,7 @@ class Master(object):
         return self.contracts_app.find_best_matching_contract_details(
                                         max_wait_time=max_wait_time, **kwargs)
 
-    def find_next_live_future_contract(self, max_wait_time=None, 
+    def find_next_live_futures_contract(self, max_wait_time=None, 
                                        min_days_until_expiry=1, **kwargs):
         """Find the next live contract for a given future.
 
@@ -88,9 +88,14 @@ class Master(object):
 
         Returns: (Contract) the 'best' matching Contract object.
         """
-        return self.contracts_app.find_next_live_future_contract(max_wait_time=max_wait_time,
+        return self.contracts_app.find_next_live_futures_contract(max_wait_time=max_wait_time,
                         min_days_until_expiry=min_days_until_expiry, **kwargs)
 
+    def get_continuous_futures_contract_details(self, symbol, **kwargs):
+        """ Get the continuous futures ContractDetails for a given symbol.
+        """
+        return self.contracts_app.get_continuous_futures_contract_details(symbol, **kwargs)
+    
     def save_contracts(self):
         """ Save the cached contract details to file.
         
@@ -190,7 +195,7 @@ class Master(object):
         return reqObjList
 
     def get_historical_data(self, contractList, frequency, use_rth=True, data_type="TRADES",
-                            start="", end="", duration="", is_snapshot=True):
+                            start="", end="", duration="", is_snapshot=True, place=True):
         reqObjList = self.marketdata_app.create_historical_data_request(contractList,
                                                                         is_snapshot=is_snapshot,
                                                                         frequency=frequency,
@@ -200,7 +205,8 @@ class Master(object):
                                                                         end=end,
                                                                         duration=duration)
         # Place data requests for all request objects
-        [reqObj.place_request() for reqObj in reqObjList]
+        if place:
+            [reqObj.place_request() for reqObj in reqObjList]
         return reqObjList
 
     def open_historical_data_streams(self, contractList, frequency, use_rth=True,
