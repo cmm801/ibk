@@ -24,6 +24,8 @@ import tempfile
 import warnings
 
 from abc import ABC, abstractmethod
+from collections import Iterable
+
 import xml.etree.ElementTree as ET
 
 from ibapi.contract import Contract, ContractDetails
@@ -32,6 +34,7 @@ from ibapi.common import BarData, TickAttrib
 
 import ibk.base
 import ibk.constants
+import ibk.errors
 import ibk.helper
 import ibk.requestmanager
 
@@ -52,13 +55,6 @@ FUNDAMENTAL_TICK_DATA_CODE = '47'
 
 # What bar size defines a 'small bar' (in seconds)
 SMALL_BAR_CUTOFF_SIZE = 30
-
-
-class DataRequestError(Exception):
-    """Exceptions generated during requesting historical market data.
-    """
-    def __init__(self, *args,**kwargs):
-        super(DataRequestError, self).__init__(*args,**kwargs)
 
 
 class AbstractDataRequest(ABC):
@@ -87,7 +83,7 @@ class AbstractDataRequest(ABC):
                         self.request_manager.register_request_complete(req_id)
         
         self.__subrequests = None
-        self.__req_ids = [None]
+        self.set_req_ids(None)
         self.__is_request_complete = False
         self.__status = ibk.requestmanager.STATUS_REQUEST_NOT_PLACED
         self.initialize_data()
@@ -152,6 +148,12 @@ class AbstractDataRequest(ABC):
                 self.__req_ids = [s.get_req_ids()[0] for s in self.subrequests]
         return self.__req_ids
 
+    def set_req_ids(self, req_ids):
+        if not isinstance(req_ids, Iterable):
+            self.__req_ids = [req_ids]
+        else:
+            self.__req_ids = req_ids
+        
     def place_request(self):
         if self.status != ibk.requestmanager.STATUS_REQUEST_ACTIVE:
             self.status = ibk.requestmanager.STATUS_REQUEST_ACTIVE
@@ -161,11 +163,11 @@ class AbstractDataRequest(ABC):
                 # Check that this is a valid request
                 is_valid, msg = self.is_valid_request()
                 if not is_valid:
-                    raise DataRequestError(msg)
+                    raise ibk.errors.DataRequestError(msg)
 
                 # Create a request ID for this request
                 req_id = self.parent_app._get_next_req_id()
-                self.__req_ids = [req_id]
+                self.set_req_ids([req_id])
                 
                 # Check with the RequestManager if this request can be made.
                 # The rate of requests might need to be slowed down if they

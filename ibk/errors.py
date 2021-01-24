@@ -24,3 +24,9 @@ class ConnectionNotEstablishedError(Exception):
         # Call the base class constructor with the parameters it needs
         super(ConnectionNotEstablishedError, self).__init__(message)
 
+
+class DataRequestError(Exception):
+    """Exceptions generated during requesting historical market data.
+    """
+    def __init__(self, *args,**kwargs):
+        super(DataRequestError, self).__init__(*args,**kwargs)
