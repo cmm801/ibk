@@ -65,9 +65,9 @@ def convert_datestr_to_datetime(input_datestr, tz_name=None):
 
     return dt_tgt
 
-def convert_datetime_to_tws_date(d, tws_tz_name=None):
-    if tws_tz_name is not None:
-        tzone = pytz.timezone(tws_tz_name)
+def convert_datetime_to_tws_date(d, tz_name=None):
+    if tz_name is not None:
+        tzone = pytz.timezone(tz_name)
         dt = d.astimezone(tzone)
     else:
         dt = d

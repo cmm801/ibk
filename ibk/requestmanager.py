@@ -7,9 +7,10 @@ HIST_HF_TOT_REQ_PER_TIME_UNIT = (60, 600)    # total # of requests allowed per u
 HIST_HF_CONTRACT_REQ_PER_TIME_UNIT = (6, 2)  # no. requests allowed on 1 contract per unit time
 HIST_HF_SPACING_FOR_IDENTICAL_REQ = 15       # time required between identical high-freq requests
 
-MAX_SIMUL_HISTORICAL_REQUESTS = 50   # Max # of simultaneous historical data requests
-MAX_SIMUL_SCANNERS = 10              # Max # of simultaneous market scanners
-MAX_SIMUL_MKT_DATA_LINES = 100       # Max # of simultaneous market data streams (aka lines)
+#MAX_SIMUL_HISTORICAL_REQUESTS = 50   # Max # of simultaneous historical data requests
+MAX_SIMUL_HISTORICAL_REQUESTS = 2     # Max # of simultaneous historical data requests
+MAX_SIMUL_SCANNERS = 10               # Max # of simultaneous market scanners
+MAX_SIMUL_MKT_DATA_LINES = 100        # Max # of simultaneous market data streams (aka lines)
 
 MAX_SIMUL_TICK_DATA_REQUESTS = 3                # Max # of simultaneous streaming tick data requests
 MIN_TIME_BTWN_TICK_REQ_ON_SAME_INSTRUMENT = 15  # Min. time to wait between tick requests on same contract

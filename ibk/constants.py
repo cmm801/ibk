@@ -1,7 +1,7 @@
 import datetime
 import pathlib
 
-from ibk.private_constants import TWS_PAPER_ACCT_NUM, TWS_PROD_ACCT_NUM, FILENAME_CONTRACTS
+from ibk.private_constants import TWS_PAPER_ACCT_NUM, TWS_PROD_ACCT_NUM, FILENAME_CONTRACTS, DIRECTORY_LOGS
 
 # The host IP
 HOST_IP = "127.0.0.1"

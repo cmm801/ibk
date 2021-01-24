@@ -6,6 +6,7 @@ import ibk.orders
 import ibk.contracts            
 import ibk.account            
 import ibk.marketdata
+import ibk.errors
 
 
 class ConnectionInfo():
@@ -88,12 +89,16 @@ class ConnectionInfo():
         """Attempt to connect an application. Return None if no connection is established."""
         app = class_handle()
         app.connect(ibk.constants.HOST_IP, port=self.port, clientId=clientId)
-        _thread = threading.Thread(target=app.run)
+        _thread = threading.Thread(target=app.run, name=class_handle.__name__)
         _thread.start()
+        
+        # Wait to see if the connection can be established
         t = 0
         while app.req_id() is None and t < 10:
             time.sleep(0.2)
             t += 1
+
+        # Return the instance if a connection is established
         if app.req_id() is not None:
             return app, _thread
         else:
@@ -133,7 +138,7 @@ class ConnectionInfo():
                 # If still not connecting, try more time to raise an exception
                 msg = ''.join(['Connection could not be established. ',
                                'Check that the correct port has been specified.'])
-                raise ConnectionNotEstablishedError(msg)
+                raise ibk.errors.ConnectionNotEstablishedError(msg)
             else:
                 self._global_apps[app.clientId] = app
                 self._global_threads[app.clientId] = _thread
@@ -142,11 +147,3 @@ class ConnectionInfo():
                             app.serverVersion(), app.twsConnectionTime(), app.clientId))
                 print('MarketDataApp connecting to IB...')
                 return app
-
-
-class ConnectionNotEstablishedError(Exception):
-    """ Exception for handling case when connection could not be established to IB server."""
-    def __init__(self, message):
-        # Call the base class constructor with the parameters it needs
-        super(ConnectionNotEstablishedError, self).__init__(message)
-

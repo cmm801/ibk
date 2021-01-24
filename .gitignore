@@ -1,4 +1,5 @@
 private_constants.py
+log/*
 .ipynb_checkpoints/*
 **/__pycache__
 *.pyc

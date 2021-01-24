@@ -66,6 +66,8 @@ class AbstractDataRequest(ABC):
         self.parent_app = parent_app
         self.is_snapshot = is_snapshot
         self.dataObj = dataObj
+        
+        self.__subrequests = None
         self.reset()
 
     def reset(self):
@@ -76,6 +78,14 @@ class AbstractDataRequest(ABC):
         self.subrequests = sub_reqs
 
     def reset_attributes(self):
+        # Register requests as complete with the RequestManager
+        # This is required in case they are using quota for processing requests
+        if self.__subrequests is not None:
+            for reqObj in self.subrequests:
+                if reqObj.status == ibk.requestmanager.STATUS_REQUEST_ACTIVE:
+                    for req_id in reqObj.get_req_ids():
+                        self.request_manager.register_request_complete(req_id)
+        
         self.__subrequests = None
         self.__req_ids = [None]
         self.__is_request_complete = False
@@ -204,6 +214,18 @@ class AbstractDataRequest(ABC):
             self.subrequests = [self]
         return self.subrequests
 
+    def __lt__(self, other):
+        return False
+
+    def __le__(self, other):
+        return self == other
+
+    def __gt__(self, other):
+        return False
+
+    def __ge__(self, other):
+        return self == other
+    
 
 class AbstractDataRequestForContract(AbstractDataRequest):
     """ Overload the AbstractDataRequest object to work with Contract objects.
@@ -437,7 +459,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         if d is None or not d:
             self._start = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=ibk.constants.TIMEZONE_TWS)
             self._start = dt.replace(tzinfo=None)
 
     @property
@@ -449,8 +471,15 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         if d is None or not d:
             self._end = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=ibk.constants.TIMEZONE_TWS)
             self._end = dt.replace(tzinfo=None)
+
+    @property
+    def endDateTime(self):
+        if not self.end:
+            return ''
+        else:
+            return ibk.helper.convert_datetime_to_tws_date(self.end)
 
     # abstractmethod
     def initialize_data(self):
@@ -475,7 +504,7 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         self.parent_app.reqHistoricalData(
                                            req_id,
                                            contract=self.contract,
-                                           endDateTime=self.end,
+                                           endDateTime=self.endDateTime,
                                            durationStr=self.durationStr(),
                                            barSizeSetting=self.barSizeSetting(),
                                            whatToShow=self.data_type,
@@ -595,17 +624,27 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
 
     def get_start_tws(self):
         if self.start:
-            return ibk.helper.convert_datestr_to_datetime(self.start, ibk.constants.TIMEZONE_TWS)
+            s = ibk.helper.convert_to_datetime(self.start, tz_name=ibk.constants.TIMEZONE_TWS)
+            if s.tzinfo is None:
+                tzinfo = pytz.timezone(ibk.constants.TIMEZONE_TWS)
+                s = tzinfo.localize(s)
+            return s
         else:
             return None
 
     def get_end_tws(self):
-        if not self.end:
+        if self.end:
+            ET = self.end
+        else:
             end_utc = pytz.utc.localize(datetime.datetime.utcnow())
             tws_tzone = pytz.timezone(ibk.constants.TIMEZONE_TWS)
-            return end_utc.astimezone(tws_tzone)
-        else:
-            return ibk.helper.convert_datestr_to_datetime(self.end, ibk.constants.TIMEZONE_TWS)
+            ET = end_utc.astimezone(tws_tzone)
+        
+        d = ibk.helper.convert_to_datetime(ET, tz_name=ibk.constants.TIMEZONE_TWS)
+        if d.tzinfo is None:
+            tzinfo = pytz.timezone(ibk.constants.TIMEZONE_TWS)
+            d = tzinfo.localize(d)
+        return d
 
     def _cancelStreamingSubscription(self):
         for req_id in self.get_req_ids():
@@ -636,9 +675,9 @@ class HistoricalDataRequest(AbstractDataRequestForContract):
         if bar_freq.units == 'days':
             # TWS convention seems to be that days begin and end at 18:00 EST
             tz_info = pytz.timezone(ibk.constants.TIMEZONE_TWS)
-            start_tws = datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1),
-                                                  datetime.time(18,0), tzinfo=tz_info)
-            end_tws = datetime.datetime.combine(end_tws.date(), datetime.time(18,0), tzinfo=tz_info)
+            start_tws = tz_info.localize(datetime.datetime.combine(start_tws.date() - datetime.timedelta(days=1),
+                                                  datetime.time(18,0)))
+            end_tws = tz_info.localize(datetime.datetime.combine(end_tws.date(), datetime.time(18,0)))
 
 
         assert delta.total_seconds() > 0, 'Start time must precede end time.'
