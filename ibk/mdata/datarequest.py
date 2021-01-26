@@ -1,21 +1,5 @@
-"""
-Module to facilitate getting data through Interactive Brokers's API
-
-Starting point was Brent Maranzano's GitHub repo:
-see: https://interactivebrokers.github.io/tws-api/index.html
-
-Classes
-    IBClient (EClient): Creates a socket to TWS or IBGateway, and handles
-        sending commands to IB through the socket.
-    IBWrapper (EWrapper): Hanldes the incoming data from IB. Many of these
-        methods are callbacks from the request commands.
-    IBApp (IBWrapper, IBClilent): This provides the main functionality. Many
-        of the methods are over-rides of the IBWrapper commands to customize
-        the functionality.
-"""
 import datetime
 import time
-import pickle
 import copy
 import numpy as np
 import pandas as pd
@@ -28,24 +12,14 @@ from collections import Iterable
 
 import xml.etree.ElementTree as ET
 
-from ibapi.contract import Contract, ContractDetails
-from ibapi.ticktype import TickTypeEnum
-from ibapi.common import BarData, TickAttrib
+from ibapi.contract import Contract
 
-import ibk.base
 import ibk.constants
-import ibk.errors
 import ibk.helper
 import ibk.requestmanager
 
-# IB TWS Field codes
-LAST_TIMESTAMP = 45
-
 # Default arguments
 DEFAULT_USE_RTH = False
-
-# Activate latency monitoring for tests of streaming data
-MONITOR_LATENCY = False
 
 # The number of rows that the market scanner returns by default
 DEFAULT_NUMBER_OF_SCAN_ROWS = 50
@@ -55,6 +29,123 @@ FUNDAMENTAL_TICK_DATA_CODE = '47'
 
 # What bar size defines a 'small bar' (in seconds)
 SMALL_BAR_CUTOFF_SIZE = 30
+
+
+def create_market_data_request(self, contractList, is_snapshot, fields=""):
+    """ Create a MarketDataRequest object for getting  current market data.
+
+        Arguments:
+            contractList: (list) a list of Contract objects
+            is_snapshot: (bool) if False, then a stream will be opened with 
+                IB that will continuously update the latest market price info.
+                If True, then only the latest price info will be returned.
+            fields: (str) additional tick data codes that are requested,
+                in additional to the default data codes. A list of available
+                additional tick data codes are available on the IB website.
+    """
+    _args = [MarketDataRequest, contractList, is_snapshot]
+    _kwargs = dict(fields=fields)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_historical_data_request(self, contractList, is_snapshot, frequency,
+                                   use_rth=DEFAULT_USE_RTH, data_type="TRADES",
+                                   start="", end="", duration=""):
+    """ Create a HistoricalDataRequest object for getting historical data.
+    """         
+    _args = [HistoricalDataRequest, contractList, is_snapshot]
+    _kwargs = dict(frequency=frequency, start=start, end=end, duration=duration,
+                                            use_rth=use_rth, data_type=data_type)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_streaming_bar_data_request(self, contractList, frequency='5s', 
+                                      use_rth=DEFAULT_USE_RTH, data_type="TRADES"):
+    is_snapshot = False
+    _args = [StreamingBarRequest, contractList, is_snapshot]
+    _kwargs = dict(frequency=frequency, use_rth=use_rth, data_type=data_type)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_streaming_tick_data_request(self, contractList, data_type="Last",
+                                    number_of_ticks=1000, ignore_size=True):
+    is_snapshot = False
+    _args = [StreamingTickDataRequest, contractList, is_snapshot]
+    _kwargs = dict(data_type=data_type, number_of_ticks=number_of_ticks, ignore_size=ignore_size)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_historical_tick_data_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type="TRADES",
+                                   start="", end="", number_of_ticks=1000):
+    is_snapshot = True
+    _args = [HistoricalTickDataRequest, contractList, is_snapshot]
+    _kwargs = dict(data_type=data_type, start=start, end=end, use_rth=use_rth,
+                                            number_of_ticks=number_of_ticks)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_first_date_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
+    is_snapshot = True
+    _args = [HeadTimeStampDataRequest, contractList, is_snapshot]
+    _kwargs = dict(use_rth=use_rth, data_type=data_type)
+    return self._create_data_request(*_args, **_kwargs)
+
+def create_fundamental_data_request(self, contractList, report_type, options=None):
+    if report_type == "ratios":
+        # If the user specifies to get fundamental ratios, use 
+        #    the MarketDataRequest object with fields == FUNDAMENTAL_TICK_DATA_CODE
+        is_snapshot = False
+        _args = [MarketDataRequest, contractList, is_snapshot]
+        _kwargs = dict(fields=FUNDAMENTAL_TICK_DATA_CODE)
+        return self._create_data_request(*_args, **_kwargs)
+    else:
+        return FundamentalDataRequest(self, contractList, is_snapshot=True,
+                              report_type=report_type, options=options)
+
+def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
+    return ScannerDataRequest(self, scanSubObj, is_snapshot=False, 
+                              options=options, filters=filters)
+
+def get_scanner_parameters(self, max_wait_time=2):
+    self._xml_params = None
+    self.reqScannerParameters()
+
+    # Sleep until the client returns a response
+    t0 = time.time()
+    while self._xml_params is None and t0 < time.time() + max_wait_time:
+        time.sleep(0.1)
+
+    # Save the XML to a text file so that ElementTree can access the data
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as tmp_file:
+        tmp_file.writelines(self._xml_params)
+        tmp_file.seek(0)
+
+        # Use the ElementTree to read in the XML
+        tree = ET.parse(tmp_file.name)
+
+    # Parse the data into dict of dicts by going through branches
+    root = tree.getroot()
+    root_dict = {}
+    for group in root:
+        root_dict[group.tag] = {}
+        for instrument in group:
+            if instrument.tag not in root_dict[group.tag]:
+                root_dict[group.tag][instrument.tag] = []
+
+            entry = {}
+            for child in instrument:
+                entry[child.tag] = child.text
+            root_dict[group.tag][instrument.tag].append(entry)
+
+    # Return the parsed data
+    return root_dict
+
+def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
+    # Make sure arguments are not included in kwargs
+    kwargs.pop('contractList', None)
+    kwargs.pop('is_snapshot', None)
+
+    # Create a request object for eqch contract
+    requestObjList = []
+    for contract in contractList:
+        request_obj = cls(self, contract, is_snapshot, **kwargs)
+        requestObjList.append(request_obj)
+    return requestObjList
 
 
 class AbstractDataRequest(ABC):
@@ -939,293 +1030,3 @@ class HeadTimeStampDataRequest(AbstractDataRequestForContract):
     def restriction_class(self):
         return ibk.requestmanager.RESTRICTION_CLASS_NONE
 
-
-class MarketDataApp(ibk.base.BaseApp):
-    """Main program class. The TWS calls nextValidId after connection, so
-    the method is over-ridden to provide an entry point into the program.
-
-    class variables:
-    saved_contracts (dict): keys are symbols, values are dictionaries of
-        information to uniquely define a contract used for trading.
-    """
-    def __init__(self):
-        super(MarketDataApp, self).__init__()
-        self.request_manager = ibk.requestmanager.RequestManager()
-
-    def get_open_streams(self):
-        return self.request_manager.open_streams
-
-    def create_market_data_request(self, contractList, is_snapshot, fields=""):
-        """ Create a MarketDataRequest object for getting  current market data.
-        
-            Arguments:
-                contractList: (list) a list of Contract objects
-                is_snapshot: (bool) if False, then a stream will be opened with 
-                    IB that will continuously update the latest market price info.
-                    If True, then only the latest price info will be returned.
-                fields: (str) additional tick data codes that are requested,
-                    in additional to the default data codes. A list of available
-                    additional tick data codes are available on the IB website.
-        """
-        _args = [MarketDataRequest, contractList, is_snapshot]
-        _kwargs = dict(fields=fields)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_historical_data_request(self, contractList, is_snapshot, frequency,
-                                       use_rth=DEFAULT_USE_RTH, data_type="TRADES",
-                                       start="", end="", duration=""):
-        """ Create a HistoricalDataRequest object for getting historical data.
-        """         
-        _args = [HistoricalDataRequest, contractList, is_snapshot]
-        _kwargs = dict(frequency=frequency, start=start, end=end, duration=duration,
-                                                use_rth=use_rth, data_type=data_type)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_streaming_bar_data_request(self, contractList, frequency='5s', 
-                                          use_rth=DEFAULT_USE_RTH, data_type="TRADES"):
-        is_snapshot = False
-        _args = [StreamingBarRequest, contractList, is_snapshot]
-        _kwargs = dict(frequency=frequency, use_rth=use_rth, data_type=data_type)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_streaming_tick_data_request(self, contractList, data_type="Last",
-                                        number_of_ticks=1000, ignore_size=True):
-        is_snapshot = False
-        _args = [StreamingTickDataRequest, contractList, is_snapshot]
-        _kwargs = dict(data_type=data_type, number_of_ticks=number_of_ticks, ignore_size=ignore_size)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_historical_tick_data_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type="TRADES",
-                                       start="", end="", number_of_ticks=1000):
-        is_snapshot = True
-        _args = [HistoricalTickDataRequest, contractList, is_snapshot]
-        _kwargs = dict(data_type=data_type, start=start, end=end, use_rth=use_rth,
-                                                number_of_ticks=number_of_ticks)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_first_date_request(self, contractList, use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
-        is_snapshot = True
-        _args = [HeadTimeStampDataRequest, contractList, is_snapshot]
-        _kwargs = dict(use_rth=use_rth, data_type=data_type)
-        return self._create_data_request(*_args, **_kwargs)
-
-    def create_fundamental_data_request(self, contractList, report_type, options=None):
-        if report_type == "ratios":
-            # If the user specifies to get fundamental ratios, use 
-            #    the MarketDataRequest object with fields == FUNDAMENTAL_TICK_DATA_CODE
-            is_snapshot = False
-            _args = [MarketDataRequest, contractList, is_snapshot]
-            _kwargs = dict(fields=FUNDAMENTAL_TICK_DATA_CODE)
-            return self._create_data_request(*_args, **_kwargs)
-        else:
-            return FundamentalDataRequest(self, contractList, is_snapshot=True,
-                                  report_type=report_type, options=options)
-
-    def create_scanner_data_request(self, scanSubObj, options=None, filters=None):
-        return ScannerDataRequest(self, scanSubObj, is_snapshot=False, 
-                                  options=options, filters=filters)
-
-    def get_scanner_parameters(self, max_wait_time=2):
-        self._xml_params = None
-        self.reqScannerParameters()
-
-        # Sleep until the client returns a response
-        t0 = time.time()
-        while self._xml_params is None and t0 < time.time() + max_wait_time:
-            time.sleep(0.1)
-
-        # Save the XML to a text file so that ElementTree can access the data
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as tmp_file:
-            tmp_file.writelines(self._xml_params)
-            tmp_file.seek(0)
-
-            # Use the ElementTree to read in the XML
-            tree = ET.parse(tmp_file.name)
-
-        # Parse the data into dict of dicts by going through branches
-        root = tree.getroot()
-        root_dict = {}
-        for group in root:
-            root_dict[group.tag] = {}
-            for instrument in group:
-                if instrument.tag not in root_dict[group.tag]:
-                    root_dict[group.tag][instrument.tag] = []
-
-                entry = {}
-                for child in instrument:
-                    entry[child.tag] = child.text
-                root_dict[group.tag][instrument.tag].append(entry)
-
-        # Return the parsed data
-        return root_dict
-
-    ##############################################################################
-    # Private methods
-    ##############################################################################
-
-    def _get_request_object_from_id(self, req_id):
-        return self.request_manager.requests[req_id]
-
-    def _create_data_request(self, cls, contractList, is_snapshot, **kwargs):
-        # Make sure arguments are not included in kwargs
-        kwargs.pop('contractList', None)
-        kwargs.pop('is_snapshot', None)
-
-        # Create a request object for eqch contract
-        requestObjList = []
-        for contract in contractList:
-            request_obj = cls(self, contract, is_snapshot, **kwargs)
-            requestObjList.append(request_obj)
-        return requestObjList
-
-    def _handle_callback_end(self, req_id, *args):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.status = ibk.requestmanager.STATUS_REQUEST_COMPLETE
-        self.request_manager.register_request_complete(req_id)
-
-    def _handle_market_data_callback(self, req_id, field, val, attribs=None):
-        reqObj = self._get_request_object_from_id(req_id)
-        field_name = TickTypeEnum.to_str(field)
-        if field == LAST_TIMESTAMP:
-            val = int(val)
-        reqObj.append_data({field_name: val})
-
-    def _handle_historical_data_callback(self, req_id, bar, is_update):
-        reqObj = self._get_request_object_from_id(req_id)
-        data = bar.__dict__
-        if is_update:
-            if MONITOR_LATENCY:
-                data['time_received'] = datetime.datetime.now()
-            reqObj.update_data(data)
-        else:
-            reqObj.append_data(data)
-
-    def _handle_realtimeBar_callback(self, req_id, date, _open, high, low, close, volume, WAP, count):
-        reqObj = self._get_request_object_from_id(req_id)
-        bar = dict(date=date, open=_open, high=high, low=low, close=close, volume=volume,
-                   average=WAP, barCount=count)
-        if MONITOR_LATENCY:
-            bar['latency'] = datetime.datetime.now().timestamp() - date
-        reqObj.append_data(bar)
-
-    def _handle_historical_tick_data_callback(self, req_id, ticks, done):
-        reqObj = self._get_request_object_from_id(req_id)
-        if ticks:
-            reqObj.append_data(ticks)
-        if done:
-            reqObj.status = ibk.requestmanager.STATUS_REQUEST_COMPLETE
-            self.request_manager.register_request_complete(req_id)
-
-    def _handle_tickByTickAllLast_callback(self, req_id, tickType, _time,
-                                           price, size, tickAttribLast, exchange, specialConditions):
-        reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=_time, price=price, size=size, tickAttribLast=tickAttribLast,
-                    exchange=exchange, specialConditions=specialConditions)
-        if MONITOR_LATENCY:
-            data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
-
-    def _handle_tickByTickBidAsk_callback(self, req_id, _time, bidPrice, askPrice,
-                                          bidSize, askSize, tickAttribBidAsk):
-        reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=_time, bidPrice=biedPrice, askPrice=askPrice, bidSize=bidSize,
-                    askSize=askSize, tickAttribBidAsk=tickAttribBidAsk)
-        if MONITOR_LATENCY:
-            data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
-
-    def _handle_tickByTickMidPoint_callback(self, req_id, _time, midPoint):
-        reqObj = self._get_request_object_from_id(req_id)
-        data = dict(time=_time, midPoint=midPoint)
-        if MONITOR_LATENCY:
-            data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
-
-    def _handle_headtimestamp_data_callback(self, req_id, timestamp):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.append_data(timestamp)
-
-    def _handle_scanner_subscription_data_callback(self, req_id, rank, 
-                   contractDetails, distance, benchmark, projection, legsStr):
-        reqObj = self._get_request_object_from_id(req_id)
-        data = dict(rank=rank, contractDetails=contractDetails, distance=distance,
-                    benchmark=benchmark, projection=projection, legsStr=legsStr)
-        reqObj.append_data(data)
-
-    def _handle_fundamental_data_callback(self, req_id, data):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.append_data(data)
-        
-    ##############################################################################
-    # Methods for handling response from the client
-    ##############################################################################
-
-    def fundamentalData(self, reqId: int, data : str):
-        self._handle_fundamental_data_callback(reqId, data)
-    
-    def scannerParameters(self, xmlParams):
-        self._xml_params = xmlParams
-
-    def scannerData(self, reqId: int, rank: int, contractDetails: ContractDetails,
-                    distance: str, benchmark: str, projection: str, legsStr: str):
-        self._handle_scanner_subscription_data_callback(reqId, rank, contractDetails,
-                    distance, benchmark, projection, legsStr)
-
-    def tickOptionComputation(self, tickerId: int, field: int, impliedVolatility: float,
-                              delta: float, optPrice: float, pvDividend: float,
-                              gamma: float, vega: float, theta: float, undPrice: float):
-        raise NotImplementedError('Option market data needs to be implemented.')
-
-    def tickPrice(self, tickerId: int, field: int, price: float, attribs: TickAttrib):
-        self._handle_market_data_callback(tickerId, field, price, attribs)
-
-    def tickSize(self, tickerId: int, field: int, size: int):
-        self._handle_market_data_callback(tickerId, field, size)
-
-    def tickString(self, tickerId: int, field: int, value: str):
-        self._handle_market_data_callback(tickerId, field, value)
-
-    def tickSnapshotEnd(self, reqId: int):
-        super().tickSnapshotEnd(reqId)
-        self._handle_callback_end(reqId)
-
-    def historicalData(self, reqId: int, bar: BarData):
-        self._handle_historical_data_callback(reqId, bar, is_update=False)
-
-    def historicalDataUpdate(self, reqId: int, bar: BarData):
-        self._handle_historical_data_callback(reqId, bar, is_update=True)
-
-    def historicalDataEnd(self, reqId: int, start: str, end: str):
-        super().historicalDataEnd(reqId, start, end)
-        self._handle_callback_end(reqId)
-
-    def realtimeBar(self, reqId, date, _open, high, low, close, volume, WAP, count):
-        super().realtimeBar(reqId, date, _open, high, low, close, volume, WAP, count)
-        self._handle_realtimeBar_callback(reqId, date, _open, high, low, close, volume, WAP, count)
-
-    def historicalTicks(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def historicalTicksBidAsk(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def historicalTicksLast(self, reqId: int, ticks, done: bool):
-        self._handle_historical_tick_data_callback(reqId, ticks, done)
-
-    def tickByTickAllLast(self, reqId, tickType, _time, price, size,
-                          tickAttribLast, exchange, specialConditions):
-        self._handle_tickByTickAllLast_callback(reqId, tickType,
-               _time, price, size, tickAttribLast, exchange, specialConditions)
-
-    def tickByTickBidAsk(self, reqId, _time, bidPrice, askPrice,
-                                         bidSize, askSize, tickAttribBidAsk):
-        self._handle_tickByTickBidAsk_callback(reqId, _time, bidPrice, askPrice,
-                                         bidSize, askSize, tickAttribBidAsk)
-
-    def tickByTickMidPoint(self, reqId, _time, midPoint):
-        self._handle_tickByTickMidPoint_callback(reqId, _time, midPoint)
-
-    def headTimestamp(self, reqId: int, timestamp: str):
-        self._handle_headtimestamp_data_callback(reqId, timestamp)
-        self._handle_callback_end(reqId)
-        self.cancelHeadTimeStamp(reqId)

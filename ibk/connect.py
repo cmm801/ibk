@@ -1,149 +1,155 @@
 import time
+from collections import namedtuple
 import threading
-
 import ibk.constants
-import ibk.orders
-import ibk.contracts            
-import ibk.account            
-import ibk.marketdata
 import ibk.errors
 
+# Maximum time to wait while trying to verify if a connection has been established
+MAX_WAIT_TIME = 10
 
-class ConnectionInfo():
+# Maximum number of clientIds to attempt for establishing a connection
+MAX_CONNECTION_ATTEMPTS = 30
+
+# Create a namedtuple to store information about different connections
+ConnectionInfo = namedtuple('ConnectionInfo',
+                            field_names=['name', 'host', 'port', 'clientId'],
+                            defaults=['', ibk.constants.HOST_IP, None, None])
+
+class ConnectionManager():
     # Declare global variables used to handle the creation of connections
-    _global_apps = dict()
-    _global_ports = dict()
-    _global_threads = dict()
+    _registered_connections = {ibk.constants.PORT_PROD : {},
+                               ibk.constants.PORT_PAPER : {}}
 
-    def __init__(self, port=None):
-        self._port = port
+    def __init__(self, port=None, host=None):
+        self.port = port
+
+        if host is None:
+            self.host = ibk.constants.HOST_IP
+        else:
+            self.host = host
 
     @property
-    def port(self):
-        return self._port
-    
-    @port.setter
-    def port(self, p):
-        if self._port != p:
-            self.reset_connections()
-            self._port = p
-            
+    def registered_connections(self):
+        return self._registered_connections[self.port]
+
+    @property
+    def registered_clientIds(self):
+        return [x.clientId for x in self.registered_connections.keys()]
+
     def reset_connections(self):
         """ Reset all connections. """
-        for _app in self._global_apps.values():
-            _app.disconnect()
-            
-        self._global_apps = dict()
-        self._global_ports = dict()
-        self._global_threads = dict()        
+        keys = list(self.registered_connections.keys())
+        for k in keys:
+            app = self.registered_connections.pop(k)
+            if app is not None:
+                app.disconnect()
 
-    def get_connection(self, client_name, clientId=None):
-        """ Entry point into the IB API
+    def get_connection(self, class_handle, clientId=None):
+        """ Find an existing API connection with a given class handle, or else
+            create a new API connection.
 
             Arguments:
-                client_name: the name of the client that we are trying to connect.
-                    Available options are 'marketdata', 'account', 'orders', 'contracts'
-                clientId: (int) Optional - specifiy which client Id to
-                    use for creating a new client or retrieving an open client
+                class_handle: A handle to a subclass of EClient/EWrapper 
+                    that can connect to IB TWS.
+                clientId: (int) the ID of the client (optional)
         """
-        if client_name == ibk.constants.MARKETDATA:
-            class_handle = ibk.marketdata.MarketDataApp
-        elif client_name == ibk.constants.ACCOUNT:
-            class_handle = ibk.account.AccountApp
-        elif client_name == ibk.constants.ORDERS:
-            class_handle = ibk.orders.OrdersApp
-        elif client_name == ibk.constants.CONTRACTS:
-            class_handle = ibk.contracts.ContractsApp
-        else:
-            raise ValueError(f'Unsupported client: {client_name}')
+        # Retrieve application if one already exists with these specs
+        app = self.find_existing_connection(class_handle, clientId=clientId)
+        
+        if app is None:
+            # Establish a new connection if there is no existing connection
+            app = class_handle()
+            self.establish_new_connection(app, clientId)
 
-        return self._get_connection_from_class(class_handle, clientId=clientId)
-            
-    def _find_existing_app_instance(self, class_handle, clientId):
+        return app
+
+    def establish_new_connection(self, app, clientId=None):
+        """ Extablish a new connection for a given class instance. """
+        if clientId is not None:
+            # A specific client Id has been requested
+            self.connect_with_clientId(app, clientId)
+        else:
+            self.connect_with_unknown_clientId(app, clientId=clientId)
+    
+    def connect_with_clientId(self, app, clientId):
+        """Attempt to connect an application. Return None if no connection is established."""
+        app.connect(host=self.host, port=self.port, clientId=clientId)
+
+        # Wait to see if the connection can be established
+        t = 0
+        while app.req_id is None and t < MAX_WAIT_TIME:
+            time.sleep(0.2)
+            t += 1
+
+        # Register the new connection
+        self.register_connection(app)
+
+    def connect_with_unknown_clientId(self, app, clientId=None):
+        """ Establish a new connection given an instance of an API connection.
+        """
+        # No specific client Id has been requested, so we try
+        #     different client Ids until we find one that works
+        cid = n_attempts = 1
+        while (app is None or not app.isConnected()) and n_attempts <= MAX_CONNECTION_ATTEMPTS:
+            while cid in self.registered_clientIds:
+                cid += 1
+
+            try:
+                self.connect_with_clientId(app, clientId=cid)
+            except ibk.errors.ConnectionNotEstablishedError:
+                cid += 1
+                n_attempts += 1
+
+    def register_connection(self, app):
+        if app is not None and app.isConnected():
+            # Save the connection information
+            info = ConnectionInfo(name=app.__class__.__name__, host=app.host, 
+                                  port=app.port, clientId=app.clientId)
+            self.registered_connections[info] = app
+            return info
+        else:
+            # If still not connecting, try more time to raise an exception
+            msg = ''.join(['Connection could not be established. ',
+                           'Check that the correct port has been specified ',
+                           'or that the clientId is not already in use.'])
+            raise ibk.errors.ConnectionNotEstablishedError(msg)
+
+    def deregister_connection(self, app):
+        """ Deregister a connection from the manager. """
+        if app is not None and app.conn_info is not None:
+            if app.conn_info in self.registered_connections:
+                del self.registered_connections[app.conn_info]
+        
+    def find_existing_connection(self, class_handle, clientId):
         """ Find an application that has already been created.
             If a clientId is not provided, then find an application of the same type.
         """
         if clientId is not None:
-            # Return the application with the requested client Id if it has the same class handle
-            if clientId in self._global_apps and self._global_ports[clientId] == self.port:
-                if isinstance(self._global_apps[clientId], class_handle):
-                    return self._global_apps[clientId]
-                else:
-                    return None
-            else:
-                return None
+            # Return the instance if it is registered
+            target_key = ConnectionInfo(name=class_handle.__name__, host=self.host, 
+                                  port=self.port, clientId=clientId)
+            app = self.registered_connections.get(target_key, None)
+            if not app.isConnected():
+                app.reconnect()
         else:
-            # If no client Id is specified, find the first application of the same type with the same port
-            clientIds = [cid for cid, app in self._global_apps.items()]
-            while clientIds:
-                cid = clientIds.pop(0)
-                if self._global_ports[cid] == self.port \
-                        and self._global_apps[cid].isConnected() \
-                        and isinstance(self._global_apps[cid], class_handle):                    
-                    return self._global_apps[cid]
+            # If no client ID is provided, try to find a match
+            candidates = []            
+            target_key = ConnectionInfo(name=class_handle.__name__, 
+                                        host=self.host, port=self.port)
+            for k, v in self.registered_connections.items():
+                if target_key == ConnectionInfo(name=k.name, host=k.host, port=k.port):
+                    candidates.append(v)
 
-            # If we reach this line, then no application was found with matching type and port
-            return None
-
-    def _connect_and_check(self, class_handle, clientId):
-        """Attempt to connect an application. Return None if no connection is established."""
-        app = class_handle()
-        app.connect(ibk.constants.HOST_IP, port=self.port, clientId=clientId)
-        _thread = threading.Thread(target=app.run, name=class_handle.__name__)
-        _thread.start()
-        
-        # Wait to see if the connection can be established
-        t = 0
-        while app.req_id() is None and t < 10:
-            time.sleep(0.2)
-            t += 1
-
-        # Return the instance if a connection is established
-        if app.req_id() is not None:
-            return app, _thread
-        else:
-            return None, None
-
-    def _get_connection_from_class(self, class_handle, clientId=None):
-        """Entry point into the program.
-
-        Arguments:
-            class_handle: The handle for the that inherits from IB EClient/EWrapper
-            clientId: (int) the ID of the client (optional)
-        """
-        # Retrieve application if one already exists with these specs
-        app = self._find_existing_app_instance(class_handle, clientId=clientId)
-        if app is not None:
-            return app
-        else:
-            # ...otherwise open a new connection
-            if clientId is not None:
-                # A specific client Id has been requested
-                app, _thread = self._connect_and_check(class_handle, clientId)
+            # Get a list of any candidates that are already connected
+            connected_candidates = [x for x in candidates if x.isConnected()]
+            if len(connected_candidates):
+                # If there are any candidates that are already connected, take the first
+                app = connected_candidates[0]
+            elif len(candidates) > 0:
+                # If there are no connected candidates, see if we can connect with one of them
+                app = candidates[0]
+                app.reconnect()                
             else:
-                # No specific client Id has been requested, so we try
-                #     different client Ids until we find one that works
-                cid = n_attempts = 1
-                max_attempts = 30
-                print('Attempting to connect with unused clientId...'.format(cid))
-                while (app is None or not app.isConnected()) and n_attempts <= max_attempts:
-                    while cid in self._global_apps.keys():
-                        cid += 1
-                        
-                    app, _thread = self._connect_and_check(class_handle, clientId=cid)
-                    cid += 1
-                    n_attempts += 1
+                app = None
 
-            if app is None or not app.isConnected():
-                # If still not connecting, try more time to raise an exception
-                msg = ''.join(['Connection could not be established. ',
-                               'Check that the correct port has been specified.'])
-                raise ibk.errors.ConnectionNotEstablishedError(msg)
-            else:
-                self._global_apps[app.clientId] = app
-                self._global_threads[app.clientId] = _thread
-                self._global_ports[app.clientId] = self.port
-                print("serverVersion:{} connectionTime:{} clientId:{}".format(\
-                            app.serverVersion(), app.twsConnectionTime(), app.clientId))
-                print('MarketDataApp connecting to IB...')
-                return app
+        return app

@@ -30,3 +30,10 @@ class DataRequestError(Exception):
     """
     def __init__(self, *args,**kwargs):
         super(DataRequestError, self).__init__(*args,**kwargs)
+
+
+class AttemptingToReuseClientIdError(Exception):
+    """ Exception for case when in use client ID is used to establish a new connection."""
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(AttemptingToReuseClientIdError, self).__init__(message)

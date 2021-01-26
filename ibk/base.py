@@ -26,6 +26,7 @@ from ibapi.client import EClient
 from ibapi.common import TickerId
 
 import ibk.constants
+import ibk.connect
 import ibk.errors
 
 
@@ -70,18 +71,61 @@ class IBWrapper(wrapper.EWrapper):
     def __init__(self):
         wrapper.EWrapper.__init__(self)
 
-        
+
 class BaseApp(IBWrapper, IBClient):
     """Main program class. The TWS calls nextValidId after connection, so
     the method is over-ridden to provide an entry point into the program.
     """
     logger = setup_logger()
-        
+
     def __init__(self):
         IBWrapper.__init__(self)
         IBClient.__init__(self, app_wrapper=self)
 
         self.__req_id = None
+        self.conn_info = None
+
+    @property
+    def connection_manager(self):
+        """ Return an instance of the connection manager, once a connection has been established.
+        """
+        if self.conn_info is not None:
+            return ibk.connect.ConnectionManager(port=self.conn_info.port, 
+                                                 host=self.conn_info.host)
+        else:
+            return None
+
+    def connect(self, host=None, port=None, clientId=None):
+        """ Establish a connection with the client and register the connection. """
+        if port is None:
+            raise ValueError('Port must be specified to establish a connection.')
+            
+        if host is None:
+            host = ibk.constants.HOST_IP
+
+        connection_mgr = ibk.connect.ConnectionManager(port=port, host=host)
+        if clientId is not None:
+            if clientId in connection_mgr.registered_clientIds:
+                msg = 'Client ID {clientId} is already registered with another connection.'
+                raise ibk.errors.AttemptingToReuseClientIdError(msg)
+            else:
+                super().connect(host=host, port=port, clientId=clientId)
+        else:
+            connection_mgr.connect_with_unknown_clientId(self)
+
+        # Register the connection and save the connection information
+        self.conn_info = connection_mgr.register_connection(self)
+
+    def reconnect(self):
+        """ Reestablish a connection if it has been broken. """
+        if not self.isConnected():
+            # We first must deregister the connection - otherwise it \
+            #     will raise an exception for reusing a registered clientId
+            self.connection_manager.deregister_connection(self)
+            
+            # Reestablish the connection using the info from the previous connection
+            self.connect(host=self.conn_info.host, port=self.conn_info.port, 
+                         clientId=self.conn_info.clientId)
         
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
@@ -118,25 +162,10 @@ class BaseApp(IBWrapper, IBClient):
         self.__req_id = reqId
         return self
 
-    def keyboardInterrupt(self):
-        """Stop execution.
-        """
-        logging.error('Keyboard interrupt.')
-        raise KeyboardInterrupt
-
+    @property
     def req_id(self):
         """Retrieve the current request id."""
         return self.__req_id
-
-    def _get_next_req_id(self):
-        """Retrieve the current class variable req_id and increment
-        it by one.
-
-        Returns (int) current req_id
-        """
-        current_req_id = self.__req_id
-        self.__req_id += 1
-        return current_req_id
 
     @property
     def account_number(self):
@@ -148,3 +177,19 @@ class BaseApp(IBWrapper, IBClient):
             return ibk.constants.TWS_PROD_ACCT_NUM
         else:
             raise ValueError(f'Unsupported port: {self.port}')
+
+    def keyboardInterrupt(self):
+        """Stop execution.
+        """
+        logging.error('Keyboard interrupt.')
+        raise KeyboardInterrupt
+
+    def _get_next_req_id(self):
+        """Retrieve the current class variable req_id and increment
+        it by one.
+
+        Returns (int) current req_id
+        """
+        current_req_id = self.__req_id
+        self.__req_id += 1
+        return current_req_id

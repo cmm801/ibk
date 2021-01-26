@@ -1,14 +1,19 @@
+import ibk.account
 import ibk.constants
 import ibk.connect
+import ibk.contracts
+import ibk.marketdata
+import ibk.orders
+
 
 MARKETDATA_MAX_WAIT_TIME = 60
 
 
 class Master(object):
-    def __init__(self, port):
+    def __init__(self, port, host=None):
         super().__init__()
         self._port = port
-        self._connection_info = ibk.connect.ConnectionInfo(port)
+        self.connection_manager = ibk.connect.ConnectionManager(port=port, host=host)
 
     def disconnect(self):
         """ Disconnect from IB Gateway (Reset all connections). """
@@ -16,7 +21,7 @@ class Master(object):
 
     def reset_connections(self):
         """ Reset all connections. """
-        self._connection_info.reset_connections()
+        self.connection_manager.reset_connections()
         
     def __del__(self):
         """ Define the destructor - close all connections. """
@@ -286,19 +291,19 @@ class Master(object):
 
     @property
     def contracts_app(self):
-        return self._connection_info.get_connection(ibk.constants.CONTRACTS)
+        return self.connection_manager.get_connection(ibk.contracts.ContractsApp)
 
     @property
     def orders_app(self):
-        return self._connection_info.get_connection(ibk.constants.ORDERS)
+        return self.connection_manager.get_connection(ibk.orders.OrdersApp)
 
     @property
     def marketdata_app(self):
-        return self._connection_info.get_connection(ibk.constants.MARKETDATA)
+        return self.connection_manager.get_connection(ibk.marketdata.MarketDataApp)
 
     @property
     def account_app(self):
-        return self._connection_info.get_connection(ibk.constants.ACCOUNT)
+        return self.connection_manager.get_connection(ibk.account.AccountApp)
 
     ##################################################################
     # Private functions

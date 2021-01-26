@@ -3,7 +3,6 @@ import datetime
 import time
 import queue
 import threading
-from abc import ABC, abstractmethod
 
 import ibk.constants
 import ibk.connect
