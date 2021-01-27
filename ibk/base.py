@@ -17,9 +17,9 @@ Classes
 
 import os.path
 import time
-import logging
 import datetime
-import collections
+import logging
+import threading
 
 from ibapi import wrapper
 from ibapi.client import EClient
@@ -28,6 +28,11 @@ from ibapi.common import TickerId
 import ibk.constants
 import ibk.connect
 import ibk.errors
+
+# Time to wait before reconnecting (after a disconnect)
+# If we try to reconnect too quickly with the same clientId, it will
+#   cause socket errors that will cause the program to freeze.
+WAIT_TIME_FOR_RECONNECT = 2
 
 
 def setup_logger():
@@ -82,8 +87,10 @@ class BaseApp(IBWrapper, IBClient):
         IBWrapper.__init__(self)
         IBClient.__init__(self, app_wrapper=self)
 
-        self.__req_id = None
         self.conn_info = None
+
+        self.__req_id = None           # Used to track unique request IDs
+        self._disconnect_time = 0.0    # Used to track when diconnect occurs
 
     @property
     def connection_manager(self):
@@ -95,6 +102,23 @@ class BaseApp(IBWrapper, IBClient):
         else:
             return None
 
+    @property
+    def thread_name(self):
+        if not hasattr(self, 'clientId') or self.clientId is None:
+            return None
+        else:
+            return f'{self.__class__.__name__}-{self.clientId}'
+
+    @property
+    def thread(self):
+        active_threads = threading.enumerate()
+        active_thread_names = [x.name for x in active_threads]
+        if self.thread_name in active_thread_names:
+            idx = active_thread_names.index(self.thread_name)
+            return active_threads[idx]
+        else:
+            return None
+    
     def connect(self, host=None, port=None, clientId=None):
         """ Establish a connection with the client and register the connection. """
         if port is None:
@@ -109,24 +133,56 @@ class BaseApp(IBWrapper, IBClient):
                 msg = 'Client ID {clientId} is already registered with another connection.'
                 raise ibk.errors.AttemptingToReuseClientIdError(msg)
             else:
+                # Check that the thread name is not already in use
+                if self.thread is not None:
+                    msg = f'The thread associated with {self.thread_name} is already in use.'
+                    raise ibk.errors.DuplicatedThreadName(msg)
+
+                # Use the superclass method to connect
                 super().connect(host=host, port=port, clientId=clientId)
+
+                # Create and start a new thread for this connection
+                t = threading.Thread(target=self.run, name=self.thread_name)
+                t.start()
         else:
             connection_mgr.connect_with_unknown_clientId(self)
 
         # Register the connection and save the connection information
         self.conn_info = connection_mgr.register_connection(self)
 
-    def reconnect(self):
-        """ Reestablish a connection if it has been broken. """
+    def disconnect(self):
+        super().disconnect()
+        self._disconnect_time = time.time()
+
+    def reconnect(self, n_retry=3):
+        """ Reestablish a connection if it has been broken.
+        
+            Allow for N retries if the first reconnect attempt does not succeed.
+        """
         if not self.isConnected():
             # We first must deregister the connection - otherwise it \
             #     will raise an exception for reusing a registered clientId
             self.connection_manager.deregister_connection(self)
             
+            # Sleep a bit if disconnect occurred recently
+            T = WAIT_TIME_FOR_RECONNECT - (time.time() - self._disconnect_time)
+            if T > 0:
+                print(f'Sleeping for {T} seconds before reconnecting...')
+                time.sleep(T)
+            
             # Reestablish the connection using the info from the previous connection
-            self.connect(host=self.conn_info.host, port=self.conn_info.port, 
+            n = 0
+            while not self.isConnected() and n < n_retry:
+                try:
+                    self.connect(host=self.conn_info.host, port=self.conn_info.port, 
                          clientId=self.conn_info.clientId)
-        
+                except ibk.errors.ConnectionNotEstablishedError:
+                    n += 1
+            
+            if not self.isConnected():
+                msg = f'Reconnect was unsuccessful for clientId {self.conn_info.clientId}.'
+                raise ibk.errors.ConnectionNotEstablishedError(msg)
+
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
         """

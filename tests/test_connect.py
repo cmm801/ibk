@@ -87,20 +87,38 @@ class ConnectTest(unittest.TestCase):
     def test_reset_connections(self):
         """ Test the method 'reset_connections'. """
         print(f"\nRunning test method {self._testMethodName}\n")
-
         app = ibk.marketdata.MarketDataApp()
+        #app.connect(port=self.port, clientId=12)
         self.connection_manager.establish_new_connection(app, clientId=12)
 
         with self.subTest('connect'):
             self.assertTrue(app.isConnected())
 
+        with self.subTest('thread_is_present'):
+            self.assertTrue(app.thread is not None)
+
+        with self.subTest('thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
+
         app.disconnect()
         with self.subTest('disconnect'):
             self.assertFalse(app.isConnected())
 
+        with self.subTest('disconnected_thread_is_none'):
+            self.assertTrue(app.thread is None)
+
         app.reconnect()
         with self.subTest('resconnect'):
             self.assertTrue(app.isConnected())
+
+        with self.subTest('reconnected_thread_is_present'):
+            self.assertTrue(app.thread is not None)
+
+        with self.subTest('reconnected_thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
+
+        with self.subTest('still_registered'):
+            self.assertIn(app.conn_info, self.connection_manager.registered_connections)
 
     def test_registered_connections(self):
         """ Test the property 'registered_connections'. """
@@ -181,6 +199,12 @@ class ConnectTest(unittest.TestCase):
         with self.subTest('connected'):
             self.assertTrue(app.isConnected())
 
+        with self.subTest('thread_is_present'):
+            self.assertTrue(app.thread is not None)
+            
+        with self.subTest('thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
+            
         with self.subTest('conn_info_is_ConnectionInfo_instance'):
             self.assertIsInstance(app.conn_info, ibk.connect.ConnectionInfo)
 
@@ -192,18 +216,26 @@ class ConnectTest(unittest.TestCase):
         print(f"\nRunning test method {self._testMethodName}\n")
 
         app = ibk.account.AccountApp()
-
         app.connect(port=self.port, clientId=124125)
         with self.subTest('connected'):
             self.assertTrue(app.isConnected())
+            
+        with self.subTest('connected_thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
 
         app.disconnect()
         with self.subTest('disconnected'):
             self.assertFalse(app.isConnected())            
 
+        with self.subTest('disconnected_thread_is_none'):
+            self.assertTrue(app.thread is None)
+
         app.reconnect()
         with self.subTest('reconnected'):
             self.assertTrue(app.isConnected())            
+            
+        with self.subTest('reconnected_thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
 
         with self.subTest('still_registered'):
             self.assertIn(app.conn_info, self.connection_manager.registered_connections)
@@ -217,10 +249,16 @@ class ConnectTest(unittest.TestCase):
         app.connect(port=self.port, clientId=124125)
         with self.subTest('connected'):
             self.assertTrue(app.isConnected())
+            
+        with self.subTest('connected_thread_is_alive'):
+            self.assertTrue(app.thread is not None and app.thread.is_alive())
 
         app.disconnect()
         with self.subTest('disconnected'):
             self.assertFalse(app.isConnected())            
+
+        with self.subTest('disconnected_thread_is_none'):
+            self.assertTrue(app.thread is None)
 
         with self.subTest('still_registered'):
             self.assertIn(app.conn_info, self.connection_manager.registered_connections)

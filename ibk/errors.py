@@ -26,7 +26,7 @@ class ConnectionNotEstablishedError(Exception):
 
 
 class DataRequestError(Exception):
-    """Exceptions generated during requesting historical market data.
+    """Exceptions generated when requesting historical market data.
     """
     def __init__(self, *args,**kwargs):
         super(DataRequestError, self).__init__(*args,**kwargs)
@@ -37,3 +37,15 @@ class AttemptingToReuseClientIdError(Exception):
     def __init__(self, message):
         # Call the base class constructor with the parameters it needs
         super(AttemptingToReuseClientIdError, self).__init__(message)
+
+
+class DuplicatedThreadName(Exception):
+    """ Exception for case when a thread name is already in use.
+    
+        Thread names are meant to be unique for the application objects (inheriting from Base).
+        If a new connection is attempted but the thread name is already in use,
+            then this exception should be raised."""
+    def __init__(self, message):
+        # Call the base class constructor with the parameters it needs
+        super(DuplicatedThreadName, self).__init__(message)
+

@@ -69,7 +69,7 @@ class ConnectionManager():
             # A specific client Id has been requested
             self.connect_with_clientId(app, clientId)
         else:
-            self.connect_with_unknown_clientId(app, clientId=clientId)
+            self.connect_with_unknown_clientId(app)
     
     def connect_with_clientId(self, app, clientId):
         """Attempt to connect an application. Return None if no connection is established."""
