@@ -32,7 +32,7 @@ import ibk.errors
 # Time to wait before reconnecting (after a disconnect)
 # If we try to reconnect too quickly with the same clientId, it will
 #   cause socket errors that will cause the program to freeze.
-WAIT_TIME_FOR_RECONNECT = 2
+WAIT_TIME_FOR_RECONNECT = 3
 
 
 def setup_logger():
@@ -90,7 +90,7 @@ class BaseApp(IBWrapper, IBClient):
         self.conn_info = None
 
         self.__req_id = None           # Used to track unique request IDs
-        self._disconnect_time = 0.0    # Used to track when diconnect occurs
+        self._disconnect_time = 0    # Used to track when diconnect occurs
 
     @property
     def connection_manager(self):
@@ -140,7 +140,10 @@ class BaseApp(IBWrapper, IBClient):
 
                 # Use the superclass method to connect
                 super().connect(host=host, port=port, clientId=clientId)
-
+                
+                # Reset the disconnect_time to prepare for next disconnection
+                self._disconnect_time = 0
+                
                 # Create and start a new thread for this connection
                 t = threading.Thread(target=self.run, name=self.thread_name)
                 t.start()
@@ -152,7 +155,8 @@ class BaseApp(IBWrapper, IBClient):
 
     def disconnect(self):
         super().disconnect()
-        self._disconnect_time = time.time()
+        if self._disconnect_time == 0:
+            self._disconnect_time = time.time()
 
     def reconnect(self, n_retry=3):
         """ Reestablish a connection if it has been broken.

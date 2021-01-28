@@ -89,7 +89,14 @@ class ConnectionManager():
         """
         # No specific client Id has been requested, so we try
         #     different client Ids until we find one that works
-        cid = n_attempts = 1
+        if len(self.registered_clientIds):
+            # Start with the next available client ID
+            initial_cid = 1 + max(self.registered_clientIds)
+        else:
+            initial_cid = 1
+
+        n_attempts = 1
+        cid = initial_cid
         while (app is None or not app.isConnected()) and n_attempts <= MAX_CONNECTION_ATTEMPTS:
             while cid in self.registered_clientIds:
                 cid += 1
