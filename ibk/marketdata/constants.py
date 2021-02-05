@@ -1,0 +1,53 @@
+
+# Default arguments
+DEFAULT_USE_RTH = False
+
+
+# Status flags
+STATUS_REQUEST_NEW = 0                        # new request
+STATUS_REQUEST_QUEUED = 1                     # is queued in request manager
+STATUS_REQUEST_PROCESSING = 2                 # has been removed from queue and being processed
+STATUS_REQUEST_SENT_TO_IB = 3                 # has been sent to IB
+STATUS_REQUEST_COMPLETE = 4                   # request is complete
+STATUS_REQUEST_CANCELLED = 5                  # request has been cancelled
+
+# List of all supported request statuses
+STATUS_REQUEST_OPTIONS = [STATUS_REQUEST_NEW,
+                          STATUS_REQUEST_QUEUED,
+                          STATUS_REQUEST_PROCESSING,
+                          STATUS_REQUEST_SENT_TO_IB,
+                          STATUS_REQUEST_COMPLETE,
+                          STATUS_REQUEST_CANCELLED,
+                         ]
+
+# Types of restrictions on data requests
+RESTRICTION_CLASS_SIMUL_HIST = 0
+RESTRICTION_CLASS_SIMUL_STREAMS = 1
+RESTRICTION_CLASS_SIMUL_SCANNERS = 2
+RESTRICTION_CLASS_SIMUL_TICK_STREAMS = 3
+RESTRICTION_CLASS_HF_HIST_IDENTICAL = 4
+RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW = 5
+RESTRICTION_CLASS_HF_HIST_LONG_WINDOW = 6
+RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT = 7
+
+RESTRICTION_CLASSES = [
+    RESTRICTION_CLASS_SIMUL_HIST,
+    RESTRICTION_CLASS_SIMUL_STREAMS,
+    RESTRICTION_CLASS_SIMUL_SCANNERS,
+    RESTRICTION_CLASS_SIMUL_TICK_STREAMS,
+    RESTRICTION_CLASS_HF_HIST_IDENTICAL,
+    RESTRICTION_CLASS_HF_HIST_SAME_CONTRACT,
+    RESTRICTION_CLASS_HF_HIST_LONG_WINDOW,
+    RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT,
+]
+
+
+"""
+RESTRICTION_CLASS_MKT_DATA_LINES = 'market_data_lines'
+RESTRICTION_CLASS_HISTORICAL_HF = 'historical_high_freq'
+RESTRICTION_CLASS_HISTORICAL_LF = 'historical_low_freq'
+RESTRICTION_CLASS_FUNDAMENTAL = 'fundamental'
+RESTRICTION_CLASS_TICK_DATA = 'tick_data'
+RESTRICTION_CLASS_SCANNER = 'scanner'
+RESTRICTION_CLASS_NONE = 'none'
+"""

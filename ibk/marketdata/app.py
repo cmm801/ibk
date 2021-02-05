@@ -14,121 +14,181 @@ Classes
         the functionality.
 """
 import datetime
+import numpy as np
 
 from ibapi.contract import ContractDetails
 from ibapi.ticktype import TickTypeEnum
 from ibapi.common import BarData, TickAttrib
 
 import ibk.base
-import ibk.requestmanager
-
+import ibk.connect
 
 # IB TWS Field codes
 LAST_TIMESTAMP = 45
+
+# The tick data code used to obtain fundamental data in a MarketDataRequest
+FUNDAMENTAL_TICK_DATA_CODE = 47
 
 # Activate latency monitoring for tests of streaming data
 MONITOR_LATENCY = False
 
 
-class MarketDataApp(ibk.base.BaseApp):
-    """Main program class. The TWS calls nextValidId after connection, so
-    the method is over-ridden to provide an entry point into the program.
-
-    class variables:
-    saved_contracts (dict): keys are symbols, values are dictionaries of
-        information to uniquely define a contract used for trading.
+class MarketDataAppManager:
+    """Class for managing a pool of market data connections.
     """
-    def __init__(self):
-        super(MarketDataApp, self).__init__()
-        self.request_manager = ibk.requestmanager.RequestManager()
+    _apps = {ibk.constants.PORT_PAPER : {},
+             ibk.constants.PORT_PROD : {}}
 
-    def get_open_streams(self):
-        return self.request_manager.open_streams
+    def __init__(self, host=None):
+        self.host = host
+
+    @property
+    def port(self):
+        if ibk.connect.active_port is None:
+            raise ValueError('"active_port" must be set in ibk.connect.')
+        else:
+            return ibk.connect.active_port
+
+    @property
+    def apps(self):
+        return self._apps[self.port]
+
+    def register_app(self, app):
+        """ Add new app(s) to make it available for placing/cancelling requests. """
+        if isinstance(app, MarketDataApp):
+            self._apps[app.port][app.uniq_id] = app
+        elif isinstance(app, list):
+            for a in app:
+                self.register_app(a)
+        else:
+            raise ValueError(f'Unexpected input type "{app.__class__}" for argument "app".')
+
+    def creeate_app(self):
+        """ Create a new App instance. """
+        app = MarketDataApp()
+        app.connect(host=self.host, port=self.port)
+        return app
+
+    def get_app(self):
+        """ Select an app instance in order to communicate with IB. """
+        if len(self.apps) == 0:
+            app = self.creeate_app()
+            self.register_app(app)
+        else:
+            uniq_id = np.random.choice(list(self.apps.keys()))
+            app = self.apps[uniq_id]
+            if not app.isConnected():
+                app.reconnect()
+
+        return app
+
+    def _get_app_from_uniq_id(self, uniq_id):
+        if uniq_id not in self.apps is None:
+            raise ValueError(f"An app with uniq_id {uniq_id} was not found.")
+        else:
+            return self.apps[uniq_id]
+
+
+class MarketDataApp(ibk.base.BaseApp):
+    """Connection to IB TWS that places data requests and handles callbacks.
+    """
+    requests = dict()
 
     ##############################################################################
     # Private methods
     ##############################################################################
 
-    def _get_request_object_from_id(self, req_id):
-        return self.request_manager.requests[req_id]
+    def _get_request_object_from_req_id(self, req_id):
+        if req_id not in self.requests is None:
+            raise ValueError(f"The request object's request Id {req_id} was not found.")
+        else:
+            return self.requests[req_id]
 
     def _handle_callback_end(self, req_id, *args):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.status = ibk.requestmanager.STATUS_REQUEST_COMPLETE
-        self.request_manager.register_request_complete(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
+        reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_COMPLETE
 
     def _handle_market_data_callback(self, req_id, field, val, attribs=None):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         field_name = TickTypeEnum.to_str(field)
         if field == LAST_TIMESTAMP:
             val = int(val)
-        reqObj.append_data({field_name: val})
+
+        # Store the value
+        reqObj._append_data({field_name: val})
+
+        # If it is a fundamental data request, we can close the stream and request
+        if reqObj.is_fundamental_data_request and field == FUNDAMENTAL_TICK_DATA_CODE:
+            # Close the stream by cancelling the request
+            reqObj._cancel_request_with_ib(self)
+
+            # Register the request as 'completed' instead of 'cancelled'
+            reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_COMPLETE
 
     def _handle_historical_data_callback(self, req_id, bar, is_update):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         data = bar.__dict__
         if is_update:
             if MONITOR_LATENCY:
                 data['time_received'] = datetime.datetime.now()
-            reqObj.update_data(data)
+            reqObj._update_data(data)
         else:
-            reqObj.append_data(data)
+            reqObj._append_data(data)
 
     def _handle_realtimeBar_callback(self, req_id, date, _open, high, low, close, volume, WAP, count):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         bar = dict(date=date, open=_open, high=high, low=low, close=close, volume=volume,
                    average=WAP, barCount=count)
         if MONITOR_LATENCY:
             bar['latency'] = datetime.datetime.now().timestamp() - date
-        reqObj.append_data(bar)
+        reqObj._append_data(bar)
 
     def _handle_historical_tick_data_callback(self, req_id, ticks, done):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         if ticks:
-            reqObj.append_data(ticks)
+            reqObj._append_data(ticks)
         if done:
-            reqObj.status = ibk.requestmanager.STATUS_REQUEST_COMPLETE
-            self.request_manager.register_request_complete(req_id)
+            reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_COMPLETE
 
     def _handle_tickByTickAllLast_callback(self, req_id, tickType, _time,
                                            price, size, tickAttribLast, exchange, specialConditions):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         data = dict(time=_time, price=price, size=size, tickAttribLast=tickAttribLast,
                     exchange=exchange, specialConditions=specialConditions)
         if MONITOR_LATENCY:
             data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
+        reqObj._append_data(data)
 
     def _handle_tickByTickBidAsk_callback(self, req_id, _time, bidPrice, askPrice,
                                           bidSize, askSize, tickAttribBidAsk):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         data = dict(time=_time, bidPrice=biedPrice, askPrice=askPrice, bidSize=bidSize,
                     askSize=askSize, tickAttribBidAsk=tickAttribBidAsk)
         if MONITOR_LATENCY:
             data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
+        reqObj._append_data(data)
 
     def _handle_tickByTickMidPoint_callback(self, req_id, _time, midPoint):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         data = dict(time=_time, midPoint=midPoint)
         if MONITOR_LATENCY:
             data['latency'] = datetime.datetime.now().timestamp() - _time
-        reqObj.append_data(data)
+        reqObj._append_data(data)
 
     def _handle_headtimestamp_data_callback(self, req_id, timestamp):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.append_data(timestamp)
+        reqObj = self._get_request_object_from_req_id(req_id)
+        reqObj._append_data(timestamp)
 
     def _handle_scanner_subscription_data_callback(self, req_id, rank, 
                    contractDetails, distance, benchmark, projection, legsStr):
-        reqObj = self._get_request_object_from_id(req_id)
+        reqObj = self._get_request_object_from_req_id(req_id)
         data = dict(rank=rank, contractDetails=contractDetails, distance=distance,
                     benchmark=benchmark, projection=projection, legsStr=legsStr)
-        reqObj.append_data(data)
+        reqObj._append_data(data)
 
     def _handle_fundamental_data_callback(self, req_id, data):
-        reqObj = self._get_request_object_from_id(req_id)
-        reqObj.append_data(data)
+        reqObj = self._get_request_object_from_req_id(req_id)
+        reqObj._append_data(data)
         
     ##############################################################################
     # Methods for handling response from the client
@@ -203,3 +263,9 @@ class MarketDataApp(ibk.base.BaseApp):
         self._handle_headtimestamp_data_callback(reqId, timestamp)
         self._handle_callback_end(reqId)
         self.cancelHeadTimeStamp(reqId)
+
+        
+
+# Define a global version of the market data manager
+mktdata_manager = MarketDataAppManager()
+        

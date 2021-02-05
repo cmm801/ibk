@@ -82,6 +82,7 @@ class BaseApp(IBWrapper, IBClient):
     the method is over-ridden to provide an entry point into the program.
     """
     logger = setup_logger()
+    _internal_counter = [0]   # Used to assign unique IDs to subclasses
 
     def __init__(self):
         IBWrapper.__init__(self)
@@ -91,6 +92,10 @@ class BaseApp(IBWrapper, IBClient):
 
         self.__req_id = None           # Used to track unique request IDs
         self._disconnect_time = 0    # Used to track when diconnect occurs
+        
+        # Set a unique identifier
+        self.uniq_id = self._internal_counter[0]
+        self._internal_counter[0] += 1        
 
     @property
     def connection_manager(self):
@@ -118,11 +123,14 @@ class BaseApp(IBWrapper, IBClient):
             return active_threads[idx]
         else:
             return None
-    
+
     def connect(self, host=None, port=None, clientId=None):
         """ Establish a connection with the client and register the connection. """
         if port is None:
-            raise ValueError('Port must be specified to establish a connection.')
+            if ibk.connect.active_port is None:
+                raise ValueError('Port must be specified to establish a connection.')
+            else:
+                port = ibk.connect.active_port
             
         if host is None:
             host = ibk.constants.HOST_IP
@@ -178,8 +186,8 @@ class BaseApp(IBWrapper, IBClient):
             n = 0
             while not self.isConnected() and n < n_retry:
                 try:
-                    self.connect(host=self.conn_info.host, port=self.conn_info.port, 
-                         clientId=self.conn_info.clientId)
+                    self.connect(host=self.conn_info.host, port=self.conn_info.port,
+                                                       clientId=self.conn_info.clientId)
                 except ibk.errors.ConnectionNotEstablishedError:
                     n += 1
             

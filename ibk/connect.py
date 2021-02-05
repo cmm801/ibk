@@ -4,6 +4,9 @@ import threading
 import ibk.constants
 import ibk.errors
 
+# Create globally available parameter that specifies the active port for connecting to IB
+active_port = None
+
 # Maximum time to wait while trying to verify if a connection has been established
 MAX_WAIT_TIME = 10
 
@@ -15,12 +18,26 @@ ConnectionInfo = namedtuple('ConnectionInfo',
                             field_names=['name', 'host', 'port', 'clientId'],
                             defaults=['', ibk.constants.HOST_IP, None, None])
 
+def set_active_port(p):
+    """ Set the 'active_port' to use for connecting to IB. """
+    if p in (ibk.constants.PORT_PAPER, ibk.constants.PORT_PROD):
+        global active_port
+        active_port = p
+    else:
+        raise ValueError(f'Unsupported port: {p}.')
+
 class ConnectionManager():
     # Declare global variables used to handle the creation of connections
     _registered_connections = {ibk.constants.PORT_PROD : {},
                                ibk.constants.PORT_PAPER : {}}
 
     def __init__(self, port=None, host=None):
+        if port is None:
+            global active_port
+            self.port = active_port
+        else:
+            self.port = port
+        
         self.port = port
 
         if host is None:
