@@ -2,14 +2,19 @@
 # Default arguments
 DEFAULT_USE_RTH = False
 
+# IB TWS Field codes
+LAST_TIMESTAMP = 45
+
+# The tick data code used to obtain fundamental data in a MarketDataRequest
+FUNDAMENTAL_TICK_DATA_CODE = 47
 
 # Status flags
+STATUS_REQUEST_CANCELLED = -1                 # request has been cancelled
 STATUS_REQUEST_NEW = 0                        # new request
-STATUS_REQUEST_QUEUED = 1                     # is queued in request manager
-STATUS_REQUEST_PROCESSING = 2                 # has been removed from queue and being processed
-STATUS_REQUEST_SENT_TO_IB = 3                 # has been sent to IB
-STATUS_REQUEST_COMPLETE = 4                   # request is complete
-STATUS_REQUEST_CANCELLED = 5                  # request has been cancelled
+STATUS_REQUEST_COMPLETE = 1                   # request is complete
+STATUS_REQUEST_QUEUED = 2                     # is queued in request manager
+STATUS_REQUEST_PROCESSING = 3                 # has been removed from queue and being processed
+STATUS_REQUEST_SENT_TO_IB = 4                 # has been sent to IB
 
 # List of all supported request statuses
 STATUS_REQUEST_OPTIONS = [STATUS_REQUEST_NEW,
@@ -36,18 +41,7 @@ RESTRICTION_CLASSES = [
     RESTRICTION_CLASS_SIMUL_SCANNERS,
     RESTRICTION_CLASS_SIMUL_TICK_STREAMS,
     RESTRICTION_CLASS_HF_HIST_IDENTICAL,
-    RESTRICTION_CLASS_HF_HIST_SAME_CONTRACT,
+    RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW,
     RESTRICTION_CLASS_HF_HIST_LONG_WINDOW,
     RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT,
 ]
-
-
-"""
-RESTRICTION_CLASS_MKT_DATA_LINES = 'market_data_lines'
-RESTRICTION_CLASS_HISTORICAL_HF = 'historical_high_freq'
-RESTRICTION_CLASS_HISTORICAL_LF = 'historical_low_freq'
-RESTRICTION_CLASS_FUNDAMENTAL = 'fundamental'
-RESTRICTION_CLASS_TICK_DATA = 'tick_data'
-RESTRICTION_CLASS_SCANNER = 'scanner'
-RESTRICTION_CLASS_NONE = 'none'
-"""

@@ -22,12 +22,8 @@ from ibapi.common import BarData, TickAttrib
 
 import ibk.base
 import ibk.connect
-
-# IB TWS Field codes
-LAST_TIMESTAMP = 45
-
-# The tick data code used to obtain fundamental data in a MarketDataRequest
-FUNDAMENTAL_TICK_DATA_CODE = 47
+import ibk.marketdata.constants
+import ibk.marketdata.datarequest
 
 # Activate latency monitoring for tests of streaming data
 MONITOR_LATENCY = False
@@ -36,6 +32,7 @@ MONITOR_LATENCY = False
 class MarketDataAppManager:
     """Class for managing a pool of market data connections.
     """
+    # Keep track of the App connections
     _apps = {ibk.constants.PORT_PAPER : {},
              ibk.constants.PORT_PROD : {}}
 
@@ -92,7 +89,11 @@ class MarketDataAppManager:
 class MarketDataApp(ibk.base.BaseApp):
     """Connection to IB TWS that places data requests and handles callbacks.
     """
+    # Store a map from request Id to DataRequest object
     requests = dict()
+
+    # Used to retrieve scanner parameters in callback
+    _xml_scanner_params_req_list = []
 
     ##############################################################################
     # Private methods
@@ -111,14 +112,15 @@ class MarketDataApp(ibk.base.BaseApp):
     def _handle_market_data_callback(self, req_id, field, val, attribs=None):
         reqObj = self._get_request_object_from_req_id(req_id)
         field_name = TickTypeEnum.to_str(field)
-        if field == LAST_TIMESTAMP:
+        if field == ibk.marketdata.constants.LAST_TIMESTAMP:
             val = int(val)
 
         # Store the value
         reqObj._append_data({field_name: val})
 
         # If it is a fundamental data request, we can close the stream and request
-        if reqObj.is_fundamental_data_request and field == FUNDAMENTAL_TICK_DATA_CODE:
+        if field == ibk.marketdata.constants.FUNDAMENTAL_TICK_DATA_CODE \
+                and isinstance(reqObj, ibk.marketdata.datarequest.FundamentalMarketDataRequest):
             # Close the stream by cancelling the request
             reqObj._cancel_request_with_ib(self)
 
@@ -146,7 +148,7 @@ class MarketDataApp(ibk.base.BaseApp):
     def _handle_historical_tick_data_callback(self, req_id, ticks, done):
         reqObj = self._get_request_object_from_req_id(req_id)
         if ticks:
-            reqObj._append_data(ticks)
+            reqObj._extend_data(ticks)
         if done:
             reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_COMPLETE
 
@@ -196,9 +198,12 @@ class MarketDataApp(ibk.base.BaseApp):
 
     def fundamentalData(self, reqId: int, data : str):
         self._handle_fundamental_data_callback(reqId, data)
-    
+
     def scannerParameters(self, xmlParams):
-        self._xml_params = xmlParams
+        while len(self._xml_scanner_params_req_list):
+            reqObj = self._xml_scanner_params_req_list.pop()
+            reqObj._xml_params = xmlParams
+            reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_COMPLETE
 
     def scannerData(self, reqId: int, rank: int, contractDetails: ContractDetails,
                     distance: str, benchmark: str, projection: str, legsStr: str):

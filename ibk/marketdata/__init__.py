@@ -1,11 +1,10 @@
-import xml.etree.ElementTree as ET
-import tempfile
 import time
 
+import ibk.marketdata.datarequest
+import ibk.marketdata.restrictionmanager
 from ibk.marketdata.app import MarketDataApp, MarketDataAppManager, mktdata_manager
 from ibk.marketdata.requestmanager import GlobalRequestManager, request_manager
 from ibk.marketdata.constants import DEFAULT_USE_RTH
-import ibk.marketdata.datarequest
 
 
 def _create_data_request(cls, contract, is_snapshot, **kwargs):
@@ -76,17 +75,17 @@ def create_fundamental_data_request(contract, report_type, options=None):
     if report_type == "ratios":
         is_snapshot = False
         _args = [ibk.marketdata.datarequest.FundamentalMarketDataRequest, contract, is_snapshot]
-        _kwargs = dict(fields=FUNDAMENTAL_TICK_DATA_CODE)
+        _kwargs = dict()
         return _create_data_request(*_args, **_kwargs)
     else:
         return ibk.marketdata.datarequest.FundamentalDataRequest(contract,
                 is_snapshot=True, report_type=report_type, options=options)
 
 def create_scanner_data_request(scanSubObj, options=None, filters=None):
-    return ibk.marketdata.datarequest.ScannerDataRequest(scanSubObj, is_snapshot=False,
-                              options=options, filters=filters)
+    return ibk.marketdata.datarequest.ScannerDataRequest(request_manager, scanSubObj, is_snapshot=False,
+                                                         options=options, filters=filters)
 
 def create_scanner_params_request():
     dataObj = None
     is_snapshot = False
-    return ibk.marketdata.datarequest.ScannerParametersDataRequest(dataObj, is_snapshot)
+    return ibk.marketdata.datarequest.ScannerParametersDataRequest(request_manager, dataObj, is_snapshot)

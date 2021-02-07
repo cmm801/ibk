@@ -1,19 +1,19 @@
+from abc import ABC, abstractmethod
+from collections import Iterable
 import datetime
 import copy
+import ibapi.contract
 import numpy as np
 import pandas as pd
 import pytz
+import tempfile
 import warnings
-
-from abc import ABC, abstractmethod
-from collections import Iterable
-
-import ibapi.contract
+import xml.etree.ElementTree as ET
 
 import ibk.helper
 from ibk.constants import TIMEZONE_TWS
 import ibk.marketdata.constants
-from ibk.marketdata.constants import DEFAULT_USE_RTH
+
 
 # The number of rows that the market scanner returns by default
 DEFAULT_NUMBER_OF_SCAN_ROWS = 50
@@ -67,13 +67,17 @@ class DataRequest(ABC):
         else:
             self.request_manager.place_request(self, priority=priority)
 
+    def is_active(self):
+        """ Check whether a request is still active. """
+        return self.status not in (ibk.marketdata.constants.STATUS_REQUEST_NEW,
+                                   ibk.marketdata.constants.STATUS_REQUEST_COMPLETE,
+                                   ibk.marketdata.constants.STATUS_REQUEST_CANCELLED)
+
     def cancel_request(self):
         """ Cancel a request that has been placed with IB.
         """
-        if self.status in (ibk.marketdata.constants.STATUS_REQUEST_NEW,
-                           ibk.marketdata.constants.STATUS_REQUEST_COMPLETE,
-                           ibk.marketdata.constants.STATUS_REQUEST_CANCELLED):
-            raise ValueError(f'Only placed requests can be cancelled. This request has status "{self.status}."')
+        if not self.is_active():
+            raise ValueError(f'Only active requests can be cancelled. This request has status "{self.status}."')
         else:
             self.request_manager.cancel_request(self)
 
@@ -112,13 +116,13 @@ class DataRequest(ABC):
 
     def _place_request_with_ib(self, app):
         """ Place the request with IB. """
-        self._place_request_with_ib_core(app)
         self.status = ibk.marketdata.constants.STATUS_REQUEST_SENT_TO_IB
+        self._place_request_with_ib_core(app)
 
     def _cancel_request_with_ib(self, app):
         """ Cancel the request with IB. """
-        self._cancel_request_with_ib_core(app)
         self.status = ibk.marketdata.constants.STATUS_REQUEST_CANCELLED
+        self._cancel_request_with_ib_core(app)
 
     @abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -143,16 +147,31 @@ class DataRequest(ABC):
         
         # Constraint on maximum number of simultaneous market data lines (aka streams)
         if not self.is_snapshot:
-            res = res + (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_MKT_DATA_LINES,)
+            res = res + (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_STREAMS,)
 
         # Additional constraints for high frequency data requests
         bar_size = ibk.helper.TimeHelper(self.frequency, 'frequency').total_seconds()
         if self.is_small_bar:
             res = res + (ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_IDENTICAL,
-                         ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_SAME_CONTRACT,
+                         ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW,
                          ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_LONG_WINDOW,)
         return res
-    
+
+    def _get_restrictions_on_historical_tick_requests(self):
+        """ Used by some subclasses to get restrictions on high-frequency historical requests.
+        """
+        # Restriction on number of simultaneous historical constraints
+        res = (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_HIST,
+               ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_IDENTICAL,
+               ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW,
+               ibk.marketdata.constants.RESTRICTION_CLASS_HF_HIST_LONG_WINDOW)
+        
+        # Constraint on maximum number of simultaneous market data lines (aka streams)
+        if not self.is_snapshot:
+            res = res + (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_TICK_STREAMS,)
+
+        return res
+
     def __lt__(self, other):
         return self.uniq_id < other.uniq_id
 
@@ -242,12 +261,12 @@ class MarketDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = dict()
+        self._market_data = dict()
 
     # abstractmethod
     def _append_data(self, new_data):
         # Save the data
-        self.__market_data.update(new_data)
+        self._market_data.update(new_data)
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -263,13 +282,13 @@ class MarketDataRequest(DataRequestForContract):
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     # abstractmethod
     @property
     def restriction_class(self):
         if not self.is_snapshot:
-            return (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_MKT_DATA_LINES,)
+            return (ibk.marketdata.constants.RESTRICTION_CLASS_SIMUL_STREAMS,)
         else:
             return tuple()
 
@@ -289,7 +308,7 @@ class MarketDataRequest(DataRequestForContract):
 class FundamentalMarketDataRequest(MarketDataRequest):
     def __init__(self, request_manager, contract, is_snapshot):
         super(FundamentalMarketDataRequest, self).__init__(request_manager, contract, is_snapshot)
-        self.fields == FUNDAMENTAL_TICK_DATA_CODE
+        self.fields = ibk.marketdata.constants.FUNDAMENTAL_TICK_DATA_CODE
             
     def get_data(self):
         raw_data = self._parse_fundamental_data()
@@ -304,7 +323,7 @@ class FundamentalMarketDataRequest(MarketDataRequest):
         data = dict()
         
         # Get the raw data that has been returned by IB
-        raw_data = self.__market_data.get('FUNDAMENTAL_RATIOS', None)
+        raw_data = self._market_data.get('FUNDAMENTAL_RATIOS', None)
         if raw_data is not None:
             # Parse any fundamental data that has been returned
             for _item in raw_data.split(';'):
@@ -337,12 +356,12 @@ class FundamentalDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = None
+        self._market_data = None
 
     # abstractmethod
     def _append_data(self, new_data):
-        assert self.__market_data is None, 'Only expected a single update.'
-        self.__market_data = new_data
+        assert self._market_data is None, 'Only expected a single update.'
+        self._market_data = new_data
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -352,7 +371,7 @@ class FundamentalDataRequest(DataRequestForContract):
                                fundamentalDataOptions=self.options)
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     # abstractmethod
     @property
@@ -362,9 +381,13 @@ class FundamentalDataRequest(DataRequestForContract):
 
 class HistoricalDataRequest(DataRequestForContract):
     def __init__(self, request_manager, contract, is_snapshot, frequency="",
-                 start="", end="", duration="", use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
+                 start="", end="", duration="", use_rth=None, 
+                 data_type='TRADES'):
         # Initialize some private variables
         self._start = self._end = None
+        
+        if use_rth is None:
+            use_rth = ibk.marketdata.constants.DEFAULT_USE_RTH
         
         # Save the input variables
         self.start = start
@@ -407,7 +430,7 @@ class HistoricalDataRequest(DataRequestForContract):
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     def is_valid_request(self):
         is_valid, msg = True, ""
@@ -424,21 +447,21 @@ class HistoricalDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = []
+        self._market_data = []
 
     # abstractmethod
     def _append_data(self, new_data):
-        self.__market_data.append(new_data)
+        self._market_data.append(new_data)
 
     def _update_data(self, new_data):
         """Only works for single request objects, and is used for handling streaming updates.
            If the new row has the same date as the previously received row, then replace it.
            Otherwise, just append the new data as normal.
        """
-        if self.__market_data and new_data['date'] == self.__market_data[-1]['date']:
-            self.__market_data[-1] = new_data
+        if self._market_data and new_data['date'] == self._market_data[-1]['date']:
+            self._market_data[-1] = new_data
         else:
-            self.__market_data.append(new_data)
+            self._market_data.append(new_data)
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -459,7 +482,7 @@ class HistoricalDataRequest(DataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        raise self._get_restrictions_on_historical_requests()
+        return self._get_restrictions_on_historical_requests()
 
     @property
     def endDateTime(self):
@@ -480,7 +503,11 @@ class HistoricalDataRequest(DataRequestForContract):
             return ibk.helper.TimeHelper(self.duration, time_type='frequency').to_tws_durationStr()
         elif self.start:
             # Get a TimeHelper object corresponding to the interval btwn start/end dates
-            delta = self.end - self.start
+            if self.end == '':
+                delta = datetime.datetime.now() - self.start
+            else:
+                delta = self.end - self.start
+
             return ibk.helper.TimeHelper.from_timedelta(delta).get_min_tws_duration()
         else:
             return ""
@@ -506,15 +533,21 @@ class HistoricalDataRequest(DataRequestForContract):
                     to the previous row (e.g. drop rows with Volume == 0)
         """
         raw_df = pd.DataFrame.from_dict(self.get_data())
-        return _get_dataframe(raw_df, start=self.start, end=self.end, data_type=self.data_type,
+        if 0 == len(raw_df):
+            return pd.DataFrame()
+        else:
+            return _get_dataframe(raw_df, start=self.start, end=self.end, data_type=self.data_type,
                        timestamp=timestamp, drop_empty_rows=drop_empty_rows)
 
 
 class HistoricalDataMultiRequest:
     def __init__(self, request_manager, contract, is_snapshot, frequency="",
-                 start="", end="", duration="", use_rth=DEFAULT_USE_RTH, data_type='TRADES'):
+                 start="", end="", duration="", use_rth=None, data_type='TRADES'):
         # Initialize some private variables
         self._start = self._end = None
+        
+        if use_rth is None:
+            use_rth = ibk.marketdata.constants.DEFAULT_USE_RTH
         
         # Save the input variables
         self.request_manager = request_manager
@@ -556,6 +589,9 @@ class HistoricalDataMultiRequest:
             dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_TWS)
             self._end = dt.replace(tzinfo=None)
 
+    def is_active(self):
+        return any([reqObj.is_active() for reqObj in self.subrequests])
+
     def place_request(self, priority=0):
         """ Place a request with the RequestManager.
         
@@ -584,11 +620,14 @@ class HistoricalDataMultiRequest:
         for d in self.get_data():
             if len(d):
                 df_list.append(pd.DataFrame.from_dict(d))
-        raw_df = pd.concat(df_list)
+        if 0 == len(df_list):
+            return pd.DataFrame()
+        else:
+            raw_df = pd.concat(df_list)
             
-        # Construct the combined DataFrame object
-        return _get_dataframe(raw_df, start=self.start, end=self.end, data_type=self.data_type,
-                       timestamp=timestamp, drop_empty_rows=drop_empty_rows)
+            # Construct the combined DataFrame object
+            return _get_dataframe(raw_df, start=self.start, end=self.end, data_type=self.data_type,
+                           timestamp=timestamp, drop_empty_rows=drop_empty_rows)
 
     def _get_period_end(self, _start, _delta):
         if _delta.total_seconds() >= (3600 * 24):
@@ -632,49 +671,69 @@ class HistoricalDataMultiRequest:
         return periods
 
     def _split_into_valid_subrequests(self):
-        # Find the timedelta between start and end dates
-        start_tws = self.start
-        end_tws = self.end
-        if start_tws is None:
-            # If 'start' is not specified, then we just use 'duration' and 'end'
-            warnings.warn('This request may be invalid. Need to add tests that duration is valid.')
-            return [self]
+        """ Split one historical request into multiple to comply with IB window constraints."""
+
+        if self.end == '':
+            end_tws = datetime.datetime.now()
         else:
-            delta = end_tws - start_tws
-            # Split the period into multiple valid periods if necessary
-            valid_periods = self._split_into_valid_periods(start_tws, end_tws)
-            if len(valid_periods) == 1:
-                return [self]
+            end_tws = self.end
+
+        if self.start == '':
+            if self.duration == '':
+                raise ValueError('Either "start" or "duration" must be specified.')
             else:
-                reqObjList = []
-                for period in valid_periods:
-                    period_start, period_end = period
-                    
-                    reqObj = HistoricalDataRequest(request_manager=self.request_manager,
-                                                   contract=self.contract, is_snapshot=self.is_snapshot,
-                                                   frequency=self.frequency, duration=self.duration,
-                                                   start=period_start, end=period_end,
-                                                   use_rth=self.useRTH, data_type=self.data_type)
-                    reqObjList.append(reqObj)
-                return reqObjList
+                th = ibk.helper.TimeHelper(self.duration, time_type='frequency')
+                start_tws = end_tws - th.to_timedelta()
+        else:
+            start_tws = self.start
+            
+        # Find the timedelta between start and end dates
+        delta = end_tws - start_tws
+
+        # Split the period into multiple valid periods if necessary
+        valid_periods = self._split_into_valid_periods(start_tws, end_tws)
+        if len(valid_periods) == 1:
+            reqObj = HistoricalDataRequest(request_manager=self.request_manager,
+                                           contract=self.contract, is_snapshot=self.is_snapshot,
+                                           frequency=self.frequency, duration='',
+                                           start=start_tws, end=self.end,
+                                           use_rth=self.useRTH, data_type=self.data_type)
+
+            return [reqObj]
+        else:
+            reqObjList = []
+            for period in valid_periods:
+                period_start, period_end = period
+
+                reqObj = HistoricalDataRequest(request_manager=self.request_manager,
+                                               contract=self.contract, is_snapshot=self.is_snapshot,
+                                               frequency=self.frequency, duration='',
+                                               start=period_start, end=period_end,
+                                               use_rth=self.useRTH, data_type=self.data_type)
+                reqObjList.append(reqObj)
+            return reqObjList
 
 
 class StreamingBarRequest(DataRequestForContract):
     def __init__(self, request_manager, contract, is_snapshot, data_type="TRADES", 
-                 use_rth=DEFAULT_USE_RTH, frequency='5s'):
+                 use_rth=None, frequency='5s'):
         assert not is_snapshot, 'Streaming requests must have is_snapshot == False.'
         super(StreamingBarRequest, self).__init__(request_manager, contract, is_snapshot)
+        
         self.frequency = frequency
         self.data_type = data_type
-        self.useRTH = use_rth
+        if use_rth is None:
+            self.useRTH = ibk.marketdata.constants.DEFAULT_USE_RTH
+        else:
+            self.useRTH = use_rth
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = []
+        self._market_data = []
 
     # abstractmethod
     def _append_data(self, new_data):
-        self.__market_data.append(new_data)
+        self._market_data.append(new_data)
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -690,7 +749,7 @@ class StreamingBarRequest(DataRequestForContract):
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     # implement abstractmethod
     @property
@@ -728,15 +787,19 @@ class StreamingTickDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = []
+        self._market_data = []
 
     # abstractmethod
     def _append_data(self, new_data):
-        self.__market_data.append(new_data)
+        self._market_data.append(new_data)
+
+    # abstractmethod
+    def _extend_data(self, new_data):
+        self._market_data.extend(new_data)
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -780,14 +843,17 @@ class HistoricalTickDataRequest(DataRequestForContract):
         Arguments:
             data_type: (str) allowed values are 'BID_ASK', 'MIDPOINT', 'TRADES'
     """
-    def __init__(self, request_manager, contract, is_snapshot, start="", end="", use_rth=DEFAULT_USE_RTH,
-                                 data_type="TRADES", number_of_ticks=1000, ignore_size=True):
+    def __init__(self, request_manager, contract, is_snapshot, start="", end="",
+                 use_rth=None, data_type="TRADES", number_of_ticks=1000, ignore_size=True):
         super(HistoricalTickDataRequest, self).__init__(request_manager, contract, is_snapshot)
         
         # Initialize private variables
         self._start = self._end = None
 
-        #
+        if use_rth is None:
+            use_rth = ibk.marketdata.constants.DEFAULT_USE_RTH
+
+        # Set additional input variables
         self.start = start
         self.end = end
         self.whatToShow = data_type
@@ -835,11 +901,15 @@ class HistoricalTickDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = []
+        self._market_data = []
 
     # abstractmethod
     def _append_data(self, new_data):
-        self.__market_data.extend(new_data)
+        self._market_data.append(new_data)
+
+    # abstractmethod
+    def _extend_data(self, new_data):
+        self._market_data.extend(new_data)
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -858,7 +928,7 @@ class HistoricalTickDataRequest(DataRequestForContract):
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     @property
     def data_type(self):
@@ -867,7 +937,7 @@ class HistoricalTickDataRequest(DataRequestForContract):
     # abstractmethod
     @property
     def restriction_class(self):
-        return self._get_restrictions_on_historical_requests()
+        return self._get_restrictions_on_historical_tick_requests()
 
     def get_dataframe(self):
         cols = ['time', 'price', 'size']
@@ -878,19 +948,24 @@ class HistoricalTickDataRequest(DataRequestForContract):
 
 
 class HeadTimeStampDataRequest(DataRequestForContract):
-    def __init__(self, request_manager, contract, is_snapshot=True, data_type='TRADES', use_rth=DEFAULT_USE_RTH):
-        self.useRTH = use_rth               # True/False - only return regular trading hours
+    def __init__(self, request_manager, contract, is_snapshot=True,
+                 data_type='TRADES', use_rth=None):
+        if use_rth is None:
+            self.useRTH = ibk.marketdata.constants.DEFAULT_USE_RTH
+        else:
+            self.useRTH = use_rth               # True/False - only return regular trading hours
+
         self.data_type = data_type           # TRADES, ASK, BID, ASK_BID, etc.
         super(HeadTimeStampDataRequest, self).__init__(request_manager, contract, is_snapshot)
 
     # abstractmethod
     def _initialize_data(self):
-        self.__market_data = None
+        self._market_data = None
 
     # abstractmethod
     def _append_data(self, new_data):
         dt = ibk.helper.convert_datestr_to_datetime(new_data)
-        self.__market_data = dt.replace(tzinfo=None)
+        self._market_data = dt.replace(tzinfo=None)
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
@@ -903,7 +978,7 @@ class HeadTimeStampDataRequest(DataRequestForContract):
 
     # abstractmethod
     def get_data(self):
-        return self.__market_data
+        return self._market_data
 
     # abstractmethod
     @property
@@ -913,19 +988,20 @@ class HeadTimeStampDataRequest(DataRequestForContract):
 
 class ScannerParametersDataRequest(DataRequest):
     def __init__(self, request_manager, dataObj, is_snapshot=False):
-        super(HeadTimeStampDataRequest, self).__init__(request_manager, dataObj, is_snapshot)
-        self._xml_params = None
+        super(ScannerParametersDataRequest, self).__init__(request_manager, dataObj, is_snapshot)
 
     # abstractmethod
     def _initialize_data(self):
+        self._xml_params = None
         self.data = None
 
     # abstractmethod
     def _append_data(self, new_data):
-        pass
+        pass # Nothing to append - data is saved on App
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):
+        app._xml_scanner_params_req_list.append(self)
         app.reqScannerParameters()
 
     # abstractmethod
@@ -935,7 +1011,7 @@ class ScannerParametersDataRequest(DataRequest):
 
     # abstractmethod
     def get_data(self):
-        if self.data is None:
+        if self.data is None and self._xml_params is not None:
             # Save the XML to a text file so that ElementTree can access the data
             with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as tmp_file:
                 tmp_file.writelines(self._xml_params)
