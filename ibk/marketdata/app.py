@@ -95,6 +95,10 @@ class MarketDataApp(ibk.base.BaseApp):
     # Used to retrieve scanner parameters in callback
     _xml_scanner_params_req_list = []
 
+    def get_active_requests(self):
+        """ Return a list of requests that are still active. """
+        return list([reqObj for reqObj in self.requests.values if reqObj.is_active()]) 
+
     ##############################################################################
     # Private methods
     ##############################################################################

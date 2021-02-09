@@ -2,7 +2,6 @@ import unittest
 import sys, os
 import time
 import datetime
-import warnings
 
 import pandas as pd
 
@@ -57,8 +56,8 @@ class MarketDataTest(unittest.TestCase):
         cls.app.disconnect()
         del cls.app
 
-    def test_get_open_streams(self):
-        """ Test whether method get_open_streams works properly.
+    def test_get_active_requests(self):
+        """ Test whether method get_active_requests works properly.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
@@ -70,20 +69,27 @@ class MarketDataTest(unittest.TestCase):
         frequency='1d'
         duration='10d'
         use_rth = True
-        reqObj = ibk.marketdata.create_historical_data_request(contract, is_snapshot,
-                                                               frequency, data_type=data_type,
-                                                               duration=duration)
+        reqObjMulti = ibk.marketdata.create_historical_data_request(contract, is_snapshot,
+                                                                    frequency, data_type=data_type,
+                                                                    duration=duration)
+        reqObj = reqObjMulti.subrequests[0]
+        
         # Save this request for automatic tearDown
         self.reqObjList = [reqObj]
 
-        # Check that there are no streams open
+        # Check that the multi-request only has a single subrequest
         ctr = 0
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #if len(self.mdapp.get_open_streams()):
-            #    print('Open streams: ', \
-            #      [self.mdapp.request_manager.requests[req_id] for req_id in self.mdapp.get_open_streams()])
-            #self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be no streams open.')
+            self.assertEqual(len(reqObjMulti.subrequests), 1, msg='There should only be 1 subrequest.')
+
+        # Check that there are no streams open
+        ctr += 1
+        with self.subTest(i=ctr):
+            request_manager = reqObj.request_manager
+            active_requests = request_manager.get_active_requests()
+            if len(active_requests):
+                print('Open streams: {}'.format(active_requests))
+            self.assertEqual(len(active_requests), 0, msg='There should be no streams open.')
 
         # Check the status of the request objects
         ctr += 1
@@ -99,8 +105,8 @@ class MarketDataTest(unittest.TestCase):
         # Check that streams are open now
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #self.assertEqual(len(self.mdapp.get_open_streams()), 1, msg='There should be 1 stream open.')
+            request_manager = reqObj.request_manager            
+            self.assertEqual(len(request_manager.get_active_requests()), 1, msg='There should be 1 stream open.')
 
         # Close all streams
         ctr += 1
@@ -116,9 +122,8 @@ class MarketDataTest(unittest.TestCase):
         # Check that all streams are closed now
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be no streams open.')
-
+            request_manager = reqObj.request_manager            
+            self.assertEqual(len(request_manager.get_active_requests()), 0, msg='There should be no streams open.')
 
     def test_create_market_data_request_snapshot(self):
         """ Test the method create_market_data_request.
@@ -151,7 +156,9 @@ class MarketDataTest(unittest.TestCase):
                 self.assertIsInstance(reqObj, ibk.marketdata.datarequest.MarketDataRequest)
 
             # Wait for the request to be completed
-            while not reqObj.get_data():
+            max_wait = 15
+            t0 = time.time()
+            while reqObj.is_active() and time.time() - t0 < max_wait:
                 time.sleep(0.1)
             
             # Check that these keys are all present
@@ -159,7 +166,7 @@ class MarketDataTest(unittest.TestCase):
             ctr += 1
             with self.subTest(i=ctr):
                 missing = list(keys - set(reqObj.get_data().keys()))
-                self.assertEqual(0, len(missing), 
+                self.assertEqual(0, len(missing),
                                 msg='Some expected data keys are missing: {}'.format(missing))
             ctr += 1
             with self.subTest(i=ctr):
@@ -210,8 +217,8 @@ class MarketDataTest(unittest.TestCase):
         # Check that there are no streams open
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #self.assertEqual(len(self.mdapp.get_open_streams()), 0, msg='There should be no open streams.')
+            request_manager = reqObj.request_manager            
+            self.assertEqual(len(request_manager.get_active_requests()), 0, msg='There should be no open streams.')
 
     def test_create_historical_data_request_streaming(self):
         """ Test the method create_historical_data_request when is_snapshot == False.
@@ -264,8 +271,9 @@ class MarketDataTest(unittest.TestCase):
         """
         print(f"\nRunning test method {self._testMethodName}\n")
 
-        # Create a list of contracts
-        contract = self.app.get_contract('GS')
+        # Get a single contract
+        contract = self.app.contracts_app.find_next_live_futures_contract(symbol='NQ',
+                                                                          exchange='GLOBEX')
 
         # Create the request object
         reqObj = ibk.marketdata.create_streaming_bar_data_request(contract, frequency='5s',
@@ -282,8 +290,8 @@ class MarketDataTest(unittest.TestCase):
         #  the callback can close the stream on its own outside of RTH)
         ctr = 0
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented')
-            #self.assertIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
+            request_manager = reqObj.request_manager
+            self.assertIn(reqObj.req_id, [x.req_id for x in request_manager.get_active_requests()])
         
         # Sleep until there is some data populating the request
         t0 = time.time()
@@ -319,8 +327,8 @@ class MarketDataTest(unittest.TestCase):
         # Check that the stream has been closed
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented')
-            #self.assertNotIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
+            request_manager = reqObj.request_manager
+            self.assertNotIn(reqObj.req_id, [x.req_id for x in request_manager.get_active_requests()])
 
     def test_create_streaming_tick_data_request(self):
         """ Test method 'create_streaming_tick_data_request'.
@@ -347,8 +355,8 @@ class MarketDataTest(unittest.TestCase):
         #  the callback can close the stream on its own outside of RTH)
         ctr = 0
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #self.assertIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
+            request_manager = reqObj.request_manager
+            self.assertIn(reqObj.req_id, [x.req_id for x in request_manager.get_active_requests()])
         
         # Sleep until there is some data populating the request
         t0 = time.time()
@@ -379,8 +387,8 @@ class MarketDataTest(unittest.TestCase):
         # Check that the stream has been closed
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented.')
-            #self.assertNotIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
+            request_manager = reqObj.request_manager
+            self.assertNotIn(reqObj.req_id, [x.req_id for x in request_manager.get_active_requests()])
 
     def test_create_historical_tick_data_request(self):
         """ Test method 'create_historical_tick_data_request'.
@@ -549,11 +557,11 @@ class MarketDataTest(unittest.TestCase):
                 self.assertTrue(all([k in data_row for k in keys]), 
                                 msg='Some expected data keys are missing.')
 
-        # Check if the scanner is being counted as an open stream
+        # Check if the scanner is active
         ctr += 1
         with self.subTest(i=ctr):
-            warnings.warn('Not implemented')
-            #self.assertIn(reqObj.get_req_ids()[0], self.mdapp.get_open_streams())
+            request_manager = reqObj.request_manager
+            self.assertIn(reqObj.req_id, [x.req_id for x in request_manager.get_active_requests()])
             
         # Close the scanner stream
         reqObj.cancel_request()

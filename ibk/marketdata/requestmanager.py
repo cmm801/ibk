@@ -76,7 +76,7 @@ class GlobalRequestManager:
             raise ValueError(f'Unsupported queue name: "{tag}".')
         else:
             if self.queues[tag] is None:
-                self.queues[tag] = DataRequestQueue(self, timeout=DEFAULT_TIMEOUT)
+                self.queues[tag] = DataRequestQueue(self, name=tag, timeout=DEFAULT_TIMEOUT)
             return self.queues[tag]
 
     def cancel_request(self, reqObj):
@@ -95,6 +95,10 @@ class GlobalRequestManager:
 
         self.restriction_manager.update_status(reqObj)
 
+    def get_active_requests(self):
+        """ Return a list of requests that are still active. """
+        return list([reqStatus.object for reqStatus in self.requests.values() if reqStatus.object.is_active()]) 
+        
     def _register_new_request(self, reqObj):
         """ Save the details of a new request.
         """
@@ -157,8 +161,10 @@ class GlobalRequestManager:
 
 
 class DataRequestQueue:
-    def __init__(self, request_manager, timeout=None):
+    def __init__(self, request_manager, name='', timeout=None):
         self.request_manager = request_manager
+        self.name = name
+
         if timeout is None:
             self.timeout = 1e6  # Don't time out if no timeout is specified
 
@@ -179,7 +185,8 @@ class DataRequestQueue:
     @property
     def thread(self):
         if self._thread is None or not self._thread.is_alive():
-            self._thread = threading.Thread(name=self.name, target=self._process_requests)
+            self._thread = threading.Thread(name=f'DataRequestQueue-{self.name}',
+                                            target=self._process_requests)
             self._thread.start()
 
         return self._thread
@@ -188,11 +195,6 @@ class DataRequestQueue:
     def thread(self, t):
         self._thread = t
     
-    @property
-    def name(self):
-        """ This is the name that is used for the thread that processes the queue. """
-        return self.__class__.__name__
-
     def enqueue_request(self, reqObj, priority=0):
         """ Put a request in a queue to be processed. 
         
@@ -206,6 +208,9 @@ class DataRequestQueue:
 
         # Make sure there is a live version of the thread
         _ = self.thread
+
+    def qsize(self):
+        return self.queue.qsize()
 
     def _process_requests(self):
         """ The target function run by the thread to process requests in the queue.
@@ -245,6 +250,7 @@ class DataRequestQueue:
                 # Reset the request instance to its original settings, and add it back to the queue
                 reqObj.cancel_request()
                 reqObj.reset()
+                print(f'Requeueing request {reqObj.uniq_id}...')
                 self.enqueue_request(reqObj, priority=priority)
                 self.n_timeouts += 1
             else:
@@ -253,6 +259,7 @@ class DataRequestQueue:
 
             # If we have timed out too many consecutive times, try disconnecting and reconnecting 
             if self.n_timeouts > self.max_timeouts:
+                print('Reconnecting App...')
                 app.disconnect()
                 self.n_timeouts = 0
 
@@ -265,6 +272,7 @@ class DataRequestQueue:
         is_satisfied = self.restriction_manager.check_is_satisfied(reqObj)
         while not all(is_satisfied.values()):
             time.sleep(0.1)
+            is_satisfied = self.restriction_manager.check_is_satisfied(reqObj)
 
 
 # Define a global version of the request manager
