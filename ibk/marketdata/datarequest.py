@@ -21,6 +21,9 @@ DEFAULT_NUMBER_OF_SCAN_ROWS = 50
 # What bar size defines a 'small bar' (in seconds)
 SMALL_BAR_CUTOFF_SIZE = 30
 
+# Default maximum number of restart attempts when IB does not return any data
+DEFAULT_MAX_RESTARTS = 2
+
 
 class DataRequest(ABC):
     _internal_counter = [0]
@@ -29,13 +32,14 @@ class DataRequest(ABC):
         self.request_manager = request_manager
         self.is_snapshot = is_snapshot
         self.dataObj = dataObj
-        
-        self._status = ibk.marketdata.constants.STATUS_REQUEST_NEW
-        self.reset()
 
         # Set a unique identifier
         self.uniq_id = self._internal_counter[0]
         self._internal_counter[0] += 1
+
+        # Set additional internal variables
+        self._status = ibk.marketdata.constants.STATUS_REQUEST_NEW
+        self.reset()
 
     def reset(self):
         """ Reset a request to its initial state.
@@ -50,9 +54,12 @@ class DataRequest(ABC):
             raise ValueError('Active or Queued requests must be cancelled before they can be reset.' \
                            + f'This request has status "{self.status}."')
         else:
-            self.status = ibk.marketdata.constants.STATUS_REQUEST_NEW
+            self._status = ibk.marketdata.constants.STATUS_REQUEST_NEW
+            self.request_manager._deregister_request(self)
             self.req_id = None
             self._initialize_data()
+            self.n_restarts = 0
+            self.max_restarts = DEFAULT_MAX_RESTARTS
 
     def place_request(self, priority=0):
         """ Place a request with the RequestManager.
@@ -100,6 +107,11 @@ class DataRequest(ABC):
 
     @abstractmethod
     def get_data(self):
+        pass
+
+    @abstractmethod
+    def has_data(self):
+        """ Returns True/False depending on whether IB has returned some results. """
         pass
 
     @abstractmethod
@@ -228,6 +240,11 @@ class ScannerDataRequest(DataRequest):
         self._market_data = [{} for _ in range(self.n_rows)]
 
     # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return any([len(x) for x in self._market_data])
+    
+    # abstractmethod
     def _append_data(self, new_data):
         self._market_data[new_data['rank']] = new_data
 
@@ -262,6 +279,11 @@ class MarketDataRequest(DataRequestForContract):
     # abstractmethod
     def _initialize_data(self):
         self._market_data = dict()
+
+    # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return len(self._market_data) > 0
 
     # abstractmethod
     def _append_data(self, new_data):
@@ -359,6 +381,11 @@ class FundamentalDataRequest(DataRequestForContract):
         self._market_data = None
 
     # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return self._market_data is not None
+
+    # abstractmethod
     def _append_data(self, new_data):
         assert self._market_data is None, 'Only expected a single update.'
         self._market_data = new_data
@@ -448,6 +475,11 @@ class HistoricalDataRequest(DataRequestForContract):
     # abstractmethod
     def _initialize_data(self):
         self._market_data = []
+
+    # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return len(self._market_data) > 0
 
     # abstractmethod
     def _append_data(self, new_data):
@@ -732,6 +764,11 @@ class StreamingBarRequest(DataRequestForContract):
         self._market_data = []
 
     # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return len(self._market_data) > 0
+
+    # abstractmethod
     def _append_data(self, new_data):
         self._market_data.append(new_data)
 
@@ -788,6 +825,11 @@ class StreamingTickDataRequest(DataRequestForContract):
     # abstractmethod
     def _initialize_data(self):
         self._market_data = []
+
+    # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return len(self._market_data) > 0
 
     # abstractmethod
     def _append_data(self, new_data):
@@ -904,6 +946,11 @@ class HistoricalTickDataRequest(DataRequestForContract):
         self._market_data = []
 
     # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return len(self._market_data) > 0
+
+    # abstractmethod
     def _append_data(self, new_data):
         self._market_data.append(new_data)
 
@@ -963,6 +1010,11 @@ class HeadTimeStampDataRequest(DataRequestForContract):
         self._market_data = None
 
     # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return self._market_data is not None
+
+    # abstractmethod
     def _append_data(self, new_data):
         dt = ibk.helper.convert_datestr_to_datetime(new_data)
         self._market_data = dt.replace(tzinfo=None)
@@ -994,6 +1046,11 @@ class ScannerParametersDataRequest(DataRequest):
     def _initialize_data(self):
         self._xml_params = None
         self.data = None
+
+    # abstractmethod
+    def has_data(self):
+        """ Returns True/False if IB has returned some data. """
+        return self._xml_params is not None
 
     # abstractmethod
     def _append_data(self, new_data):

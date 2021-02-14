@@ -38,16 +38,20 @@ class RestrictionManager:
         mdconst.RESTRICTION_CLASS_SIMUL_TICK_STREAMS :
             dict(),
         mdconst.RESTRICTION_CLASS_HF_HIST_LONG_WINDOW :
-            queue.PriorityQueue(maxsize=MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_LONG_WINDOW][0]),
+            queue.PriorityQueue(maxsize=\
+                    -1 + MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_LONG_WINDOW][0]),
         mdconst.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW :
             collections.defaultdict(lambda :
-                queue.PriorityQueue(maxsize=MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW][0])),
+                queue.PriorityQueue(maxsize=\
+                    -1 + MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW][0])),
         mdconst.RESTRICTION_CLASS_HF_HIST_IDENTICAL :
             collections.defaultdict(lambda :
-                queue.PriorityQueue(maxsize=MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_IDENTICAL][0])),
+                queue.PriorityQueue(maxsize=\
+                    -1 + MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_HF_HIST_IDENTICAL][0])),
         mdconst.RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT :
             collections.defaultdict(lambda :
-                queue.PriorityQueue(maxsize=MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT][0])),
+                queue.PriorityQueue(maxsize=\
+                    -1 + MAX_REQUESTS_PER_WINDOW[mdconst.RESTRICTION_CLASS_TICK_STREAM_SAME_CONTRACT][0])),
     }
     
     # Define a set of threading locks to prevent race conditions when accessing shared resources
@@ -118,7 +122,7 @@ class RestrictionManager:
             up_to_date = False
             while container.qsize() and not up_to_date:
                 T, uniq_id = container.get()
-                if time.time() - T >= T_max:
+                if time.time() - T < T_max:
                     up_to_date = True
                     container.put((T, uniq_id))
 
@@ -222,20 +226,20 @@ class RestrictionManager:
     def _check_too_many_historical_requests(self, reqObj, res_class):
         """  Check if rate of historical high freq. requests is too high. """
         container = self.get_container(reqObj, res_class)
-        return container.qsize() < MAX_REQUESTS_PER_WINDOW[res_class][1]
+        return not container.full()
 
     def _check_identical_historical_requests(self, reqObj, res_class):
         """ Check identical historical small bar requests. """
         container = self.get_container(reqObj, res_class)
-        return container.qsize() < MAX_REQUESTS_PER_WINDOW[res_class][1]
+        return not container.full()
 
     def _check_historical_requests_on_same_contract(self, reqObj, res_class):
         """ Check if historical requests on same contract are too frequent. """
         container = self.get_container(reqObj, res_class)
-        return container.qsize() < MAX_REQUESTS_PER_WINDOW[res_class][1]
+        return not container.full()
 
     def _check_tick_streams_on_same_contract(self, reqObj, res_class):
         """ Only 1 streaming tick data request per contract is allowed every 15 seconds. """
         container = self.get_container(reqObj, res_class)
-        return container.qsize() < MAX_REQUESTS_PER_WINDOW[res_class][1]
+        return not container.full()
 

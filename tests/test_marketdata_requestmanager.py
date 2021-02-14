@@ -1,5 +1,6 @@
 import datetime
 import ibapi
+import numpy as np
 import pandas as pd
 import time
 import unittest
@@ -7,6 +8,7 @@ from unittest.mock import Mock
 
 import ibk.constants
 import ibk.marketdata
+import ibk.marketdata.constants as mdconst
 
 
 class MockMarketDataApp:
@@ -113,13 +115,37 @@ class RequestManagerTest(unittest.TestCase):
         print(f"\nRunning test method {self._testMethodName}\n")
 
         start = datetime.datetime(2020, 1, 1, 0)
-        end = datetime.datetime(2020, 12, 31, 0)
-        frequency = '1M'
+        end = datetime.datetime(2020, 1, 1, 12)
+        frequency = '1s'
         is_snapshot = True
         contract = self._get_contract_stock('SPY')
         reqObj = ibk.marketdata.create_historical_data_request(contract, is_snapshot,
                                                                frequency=frequency,
                                                                start=start, end=end)
+
+        # Place the request
+        reqObj.place_request()
+        
+        # Wait until it has been completed
+        max_wait = 30
+        t0 = time.time()
+        while time.time() - t0 < max_wait and reqObj.is_active():
+            time.sleep(0.2)
+
+        # Collect the timestamps that each request was submitted to IB
+        time_submitted = []
+        req_status = reqObj.request_manager.requests
+        for r in reqObj.subrequests:
+            time_submitted.append(req_status[r.uniq_id].info[mdconst.STATUS_REQUEST_SENT_TO_IB])
+
+        # Find the time between requests within the short window
+        res_class = mdconst.RESTRICTION_CLASS_HF_HIST_SHORT_WINDOW
+        N, T = ibk.marketdata.restrictionmanager.MAX_REQUESTS_PER_WINDOW[res_class]
+        time_submitted_srt = np.array(sorted(time_submitted))
+        delta = pd.Series(time_submitted_srt[1:] - time_submitted_srt[:-1])
+        rolling_delta = delta.rolling(N).sum()
+        print(rolling_delta.max(), T)
+        
         #ctr = 0
         #with self.subTest(i=ctr):        
         #    self.assertEqual(cnt_1, single_order.contract, msg='Contract mismatch.')

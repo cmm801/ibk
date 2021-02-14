@@ -14,6 +14,7 @@ from ibk.marketdata.restrictionmanager import RestrictionManager
 from ibk.marketdata.app import mktdata_manager
 
 # Define names of Queues used for managing data requests
+QUEUE_MONITORING = 'monitoring'
 QUEUE_STREAM = 'stream'
 QUEUE_GENERIC = 'generic'
 QUEUE_SCANNER = 'scanner'
@@ -21,7 +22,7 @@ QUEUE_TICK_STREAM = 'tick_Stream'
 QUEUE_HIST_SMALL_BAR = 'hist_small_bar'
 QUEUE_HIST_LARGE_BAR = 'hist_large_bar'
 
-QUEUE_TYPES = [QUEUE_STREAM, QUEUE_GENERIC, QUEUE_SCANNER,
+QUEUE_TYPES = [QUEUE_MONITORING, QUEUE_STREAM, QUEUE_GENERIC, QUEUE_SCANNER,
                QUEUE_TICK_STREAM, QUEUE_HIST_SMALL_BAR, QUEUE_HIST_LARGE_BAR]
 
 # Default timeout (in seconds) if IB does not provide a response to a request
@@ -49,7 +50,7 @@ class RequestStatus:
         if self.is_updated():
             raise ValueError(f'Status {self.status} has already been set.')
         else:
-            self.info[self.status] = datetime.datetime.now()
+            self.info[self.status] = time.time()
 
 
 class GlobalRequestManager:
@@ -70,13 +71,21 @@ class GlobalRequestManager:
         assigned_queue = self.get_assigned_queue(reqObj)
         assigned_queue.enqueue_request(reqObj, priority=priority)
         
+    @property
+    def monitoring_queue(self):
+        return self.get_queue(QUEUE_MONITORING)
+            
     def get_queue(self, tag):
         """ Get a specific DataRequestQueue. """
         if tag not in self.queues:
             raise ValueError(f'Unsupported queue name: "{tag}".')
+        elif tag == QUEUE_MONITORING:
+            if self.queues[tag] is None:
+                self.queues[tag] = MonitoringQueue(self, timeout=DEFAULT_TIMEOUT)
+            return self.queues[tag]            
         else:
             if self.queues[tag] is None:
-                self.queues[tag] = DataRequestQueue(self, name=tag, timeout=DEFAULT_TIMEOUT)
+                self.queues[tag] = DataRequestQueue(self, name=tag)
             return self.queues[tag]
 
     def cancel_request(self, reqObj):
@@ -121,6 +130,10 @@ class GlobalRequestManager:
         # Update the request status
         reqObj.status = mdconst.STATUS_REQUEST_QUEUED
 
+    def _deregister_request(self, reqObj):
+        if reqObj.uniq_id in self.requests:
+            del self.requests[reqObj.uniq_id]
+
     def _get_app(self):
         """ Get an App instance from the MarketDataAppManager. """
         return mktdata_manager.get_app()
@@ -161,12 +174,9 @@ class GlobalRequestManager:
 
 
 class DataRequestQueue:
-    def __init__(self, request_manager, name='', timeout=None):
+    def __init__(self, request_manager, name=''):
         self.request_manager = request_manager
         self.name = name
-
-        if timeout is None:
-            self.timeout = 1e6  # Don't time out if no timeout is specified
 
         self.queue = queue.PriorityQueue()
         self.thread = None
@@ -237,7 +247,10 @@ class DataRequestQueue:
             # Place the request
             app = self._get_app()
             reqObj._place_request_with_ib(app)
-            
+
+            # Put the request onto the monitoring queue to make sure it gets fulfilled
+            self.request_manager.monitoring_queue.enqueue_request(reqObj, priority=priority)
+
             # Wait for request to propogate
             wait_time = 1.0
             t0 = time.time()
@@ -273,6 +286,98 @@ class DataRequestQueue:
         while not all(is_satisfied.values()):
             time.sleep(0.1)
             is_satisfied = self.restriction_manager.check_is_satisfied(reqObj)
+
+
+class MonitoringQueue:
+    def __init__(self, request_manager, timeout=None):
+        self.request_manager = request_manager
+        
+        if timeout is None:
+            self.timeout = DEFAULT_TIMEOUT
+        else:
+            self.timeout = timeout
+
+        self.name = QUEUE_MONITORING
+        self.queue = queue.Queue()
+        self.thread = None
+        self.counter = 0
+
+    def _get_app(self):
+        return self.request_manager._get_app()
+
+    @property
+    def restriction_manager(self):
+        return self.request_manager.restriction_manager
+
+    @property
+    def thread(self):
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(name=f'DataRequestQueue-{self.name}',
+                                            target=self._process_requests)
+            self._thread.start()
+
+        return self._thread
+
+    @thread.setter
+    def thread(self, t):
+        self._thread = t
+
+    def enqueue_request(self, reqObj, priority=0):
+        """ Put a request in a queue to be processed. 
+        
+            Arguments:
+                reqObj: the request object to be processed.
+                priority: (float) the requests with the lowest priority
+                    will be processed first.
+        """
+        if reqObj.n_restarts > reqObj.max_restarts:
+            raise ValueError(f'Maximum restarts exceeded for request {reqObj.uniq_id}.')
+        
+        self.queue.put((priority, reqObj))
+
+        # Make sure there is a live version of the thread
+        _ = self.thread
+
+    def qsize(self):
+        return self.queue.qsize()
+
+    def _process_requests(self):
+        """ The target function run by the thread to process requests in the queue.
+        
+            This should be defined by the subclass in order to process requests.
+        """
+        while self.queue.qsize():
+            priority, reqObj = self.queue.get(timeout=0.001)
+
+            # Check if the request was completed/cancelled or has returned any data
+            if reqObj.status not in (mdconst.STATUS_REQUEST_COMPLETE, mdconst.STATUS_REQUEST_CANCELLED,) \
+                    and not reqObj.has_data():
+
+                # Get the time that the request was placed
+                t_0 = self.request_manager.requests[reqObj.uniq_id].info[mdconst.STATUS_REQUEST_SENT_TO_IB]
+
+                # Check if the max wait time has been exceedeed
+                if time.time() - t_0 > self.timeout:
+                    # Cancel the request, as it has timed out
+                    reqObj.cancel_request()
+                    if reqObj.n_restarts == reqObj.max_restarts:
+                        # If we have already exceeded our allowed restarts, then cancel the request
+                        reqObj.status = mdconst.STATUS_REQUEST_TIMED_OUT
+                    else:
+                        # ...otherwise try to place the request once again
+                        N = reqObj.n_restarts
+                        reqObj.reset()
+                        reqObj.n_restarts = N + 1
+                        self.request_manager.place_request(reqObj, priority)
+                else:
+                    # We haven't timed out yet, so put the request back on the queue and wait longer
+                    self.queue.put((priority, reqObj))
+            
+            # Sleep after checking each request so we don't use too much CPU rechecking requests
+            time.sleep(1)
+
+        # Get rid of the finished thread
+        self.thread = None
 
 
 # Define a global version of the request manager
