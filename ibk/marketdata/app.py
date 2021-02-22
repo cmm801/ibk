@@ -84,7 +84,7 @@ class MarketDataAppManager:
             raise ValueError(f"An app with uniq_id {uniq_id} was not found.")
         else:
             return self.apps[uniq_id]
-
+        
 
 class MarketDataApp(ibk.base.BaseApp):
     """Connection to IB TWS that places data requests and handles callbacks.
@@ -98,6 +98,20 @@ class MarketDataApp(ibk.base.BaseApp):
     def get_active_requests(self):
         """ Return a list of requests that are still active. """
         return list([reqObj for reqObj in self.requests.values if reqObj.is_active()]) 
+
+    def error(self, reqId: int, errorCode: int, errorString: str):
+        """Overide superclass error method to handle request errors.
+        """
+        if errorCode == 162:
+            # Historical market data Service error message. 
+            super().error(reqId, errorCode, errorString)    
+            reqObj = self.requests[reqId]
+            if reqObj.is_active():
+                reqObj.cancel_request()
+                reqObj.status = ibk.marketdata.constants.STATUS_REQUEST_ERROR
+        else:
+            # Otherwise just use the superclass method
+            super().error(reqId, errorCode, errorString)
 
     ##############################################################################
     # Private methods

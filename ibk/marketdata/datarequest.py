@@ -49,8 +49,8 @@ class DataRequest(ABC):
             for Active/Queued requests on which reset() is called.
         """
         if self.status not in (ibk.marketdata.constants.STATUS_REQUEST_NEW,
-                           ibk.marketdata.constants.STATUS_REQUEST_COMPLETE,
-                           ibk.marketdata.constants.STATUS_REQUEST_CANCELLED):
+                               ibk.marketdata.constants.STATUS_REQUEST_COMPLETE,
+                               ibk.marketdata.constants.STATUS_REQUEST_CANCELLED):
             raise ValueError('Active or Queued requests must be cancelled before they can be reset.' \
                            + f'This request has status "{self.status}."')
         else:
@@ -76,9 +76,9 @@ class DataRequest(ABC):
 
     def is_active(self):
         """ Check whether a request is still active. """
-        return self.status not in (ibk.marketdata.constants.STATUS_REQUEST_NEW,
-                                   ibk.marketdata.constants.STATUS_REQUEST_COMPLETE,
-                                   ibk.marketdata.constants.STATUS_REQUEST_CANCELLED)
+        return self.status in (ibk.marketdata.constants.STATUS_REQUEST_QUEUED,
+                               ibk.marketdata.constants.STATUS_REQUEST_PROCESSING,
+                               ibk.marketdata.constants.STATUS_REQUEST_SENT_TO_IB)
 
     def cancel_request(self):
         """ Cancel a request that has been placed with IB.
@@ -1120,19 +1120,22 @@ def _get_utc_timestamp_index(df):
 
 def _drop_static_rows(df, data_type):
     """ Only keep rows where something has changed. """
-    idx = np.zeros((df.shape[0],), dtype=bool)
-    idx[0] = True
-
-    if data_type in ['BID', 'ASK']:
-        sub_df = df.drop(['average', 'barCount', 'volume'], axis=1)
-        vals = sub_df.to_numpy()
-        idx[1:] = np.any(vals[1:] != vals[:-1], axis=1)
-    elif data_type == 'TRADES':
-        # Only keep rows with a non-zero volume (e.g., a trade occurred in this bar)
-        idx[1:] = (df.volume.values[1:] != 0)
+    if not df.shape[0]:
+        return df  # Empty data frame
     else:
-        raise NotImplementedError('Not implemented for data type {}'.format(data_type))
-    return df[idx]
+        idx = np.zeros((df.shape[0],), dtype=bool)
+        idx[0] = True
+
+        if data_type in ['BID', 'ASK']:
+            sub_df = df.drop(['average', 'barCount', 'volume'], axis=1)
+            vals = sub_df.to_numpy()
+            idx[1:] = np.any(vals[1:] != vals[:-1], axis=1)
+        elif data_type == 'TRADES':
+            # Only keep rows with a non-zero volume (e.g., a trade occurred in this bar)
+            idx[1:] = (df.volume.values[1:] != 0)
+        else:
+            raise NotImplementedError('Not implemented for data type {}'.format(data_type))
+        return df[idx]
 
 def _get_dataframe(df_input, start, end, data_type, 
                    timestamp=False, drop_empty_rows=True):

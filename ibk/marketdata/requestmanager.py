@@ -229,7 +229,9 @@ class DataRequestQueue:
         """
         finished_status = [mdconst.STATUS_REQUEST_SENT_TO_IB,
                            mdconst.STATUS_REQUEST_COMPLETE,
-                           mdconst.STATUS_REQUEST_CANCELLED]
+                           mdconst.STATUS_REQUEST_CANCELLED,
+                           mdconst.STATUS_REQUEST_ERROR,
+                          ]
         while self.queue.qsize():
             priority, reqObj = self.queue.get(timeout=0.001)
             is_valid, msg = reqObj.is_valid_request()
@@ -346,12 +348,14 @@ class MonitoringQueue:
         
             This should be defined by the subclass in order to process requests.
         """
+        finished_status = (mdconst.STATUS_REQUEST_COMPLETE, 
+                           mdconst.STATUS_REQUEST_CANCELLED,
+                           mdconst.STATUS_REQUEST_ERROR,)
         while self.queue.qsize():
             priority, reqObj = self.queue.get(timeout=0.001)
 
             # Check if the request was completed/cancelled or has returned any data
-            if reqObj.status not in (mdconst.STATUS_REQUEST_COMPLETE, mdconst.STATUS_REQUEST_CANCELLED,) \
-                    and not reqObj.has_data():
+            if reqObj.status not in finished_status and not reqObj.has_data():
 
                 # Get the time that the request was placed
                 t_0 = self.request_manager.requests[reqObj.uniq_id].info[mdconst.STATUS_REQUEST_SENT_TO_IB]

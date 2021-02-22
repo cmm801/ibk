@@ -198,19 +198,19 @@ class BaseApp(IBWrapper, IBClient):
     def error(self, reqId: TickerId, errorCode: int, errorString: str):
         """Overide EWrapper error method.
         """
-        if errorCode == 502:
-            msg = ''.join(['A connection could not be established. ',
-                           'Check that the correct port has been specified and ',
-                           'that the client Id is not already in use.\n',
-                           errorString])
-            raise ibk.errors.ConnectionNotEstablishedError(msg)
-        elif errorCode == 200:
+        if errorCode == 200:
             # This error means that the contract request was ambiguous
             super().error(reqId, errorCode, errorString)            
             raise ibk.errors.AmbiguousContractError('Ambiguous contract definition.')
         elif errorCode == 321:
             super().error(reqId, errorCode, errorString)
             raise ibk.errors.ServerValidationError('Validation error returned by server.')
+        elif errorCode == 502:
+            msg = ''.join(['A connection could not be established. ',
+                           'Check that the correct port has been specified and ',
+                           'that the client Id is not already in use.\n',
+                           errorString])
+            raise ibk.errors.ConnectionNotEstablishedError(msg)  
         else:
             ignorable_error_codes = [2104,  # Market data farm connection is OK 
                                      2106,  # A historical data farm is connected.

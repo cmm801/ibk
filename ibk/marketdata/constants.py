@@ -9,6 +9,7 @@ LAST_TIMESTAMP = 45
 FUNDAMENTAL_TICK_DATA_CODE = 47
 
 # Status flags
+STATUS_REQUEST_ERROR = -3                     # request received a TWS error code 162 (possibly no data)
 STATUS_REQUEST_TIMED_OUT = -2                 # request has timed out
 STATUS_REQUEST_CANCELLED = -1                 # request has been cancelled
 STATUS_REQUEST_NEW = 0                        # new request
@@ -19,7 +20,8 @@ STATUS_REQUEST_SENT_TO_IB = 4                 # has been sent to IB
 
 
 # List of all supported request statuses
-STATUS_REQUEST_OPTIONS = (STATUS_REQUEST_TIMED_OUT,
+STATUS_REQUEST_OPTIONS = (STATUS_REQUEST_ERROR,
+                          STATUS_REQUEST_TIMED_OUT,
                           STATUS_REQUEST_CANCELLED,
                           STATUS_REQUEST_NEW,
                           STATUS_REQUEST_COMPLETE,
