@@ -19,6 +19,13 @@ a shell or Jupyter Lab.
     $ib_api = ib_api.main(port=7496)
 Use port 7497 for paper trading.
 
+## Installation and Setup
+
+Install the package locally by running:
+```
+pip install -e .
+```
+
 ## Example
 [Demo Jupyter Lab Notebook](http://htmlpreview.github.com/?https://github.com/brentjm/Interactive-Brokers-API/blob/master/InteractiveBrokersDemo.html)
 
