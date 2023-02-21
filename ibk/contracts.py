@@ -13,15 +13,17 @@ Classes
         of the methods are over-rides of the IBWrapper commands to customize
         the functionality.
 """
-import os
-import time
-import datetime
-import pytz
-import pickle
 import bisect
+import datetime
 import numpy as np
+import os
 import pandas as pd
-import ibapi
+import pickle
+import pytz
+import time
+
+from ibapi.contract import Contract, ContractDetails
+from typing import Optional
 
 import ibk.base
 import ibk.helper
@@ -50,7 +52,7 @@ class ContractsApp(ibk.base.BaseApp):
         # Load the saved contracts
         self._load_contracts()
 
-    def get_contract_details(self, localSymbol: str):
+    def get_contract_details(self, localSymbol: str) -> Optional[ContractDetails]:
         """ Try to get saved contract details with the specified localSymbol.
 
             Arguments:
@@ -64,7 +66,7 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             return None
 
-    def get_contract(self, localSymbol: str):
+    def get_contract(self, localSymbol: str) -> Optional[Contract]:
         """ Try to find a saved contract with the specified localSymbol.
 
             Arguments:
@@ -79,11 +81,13 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             return contract_details.contract
 
-    def is_saved_contract(self, localSymbol: str):
+    def is_saved_contract(self, localSymbol: str) -> bool:
         """Check whether a contract is saved in the cache."""
         return localSymbol in self._saved_contract_details
         
-    def save_contract_details(self, contract_details_list):
+    def save_contract_details(
+        self,
+        contract_details_list: list[ContractDetails]) -> None:
         """Save a list of instruments' contract details along with other cached contracts.
 
         Args:
@@ -95,7 +99,7 @@ class ContractsApp(ibk.base.BaseApp):
             contract_details_list = [contract_details_list]
 
         for _cd in contract_details_list:
-            if not isinstance(_cd, ibapi.contract.ContractDetails):
+            if not isinstance(_cd, ContractDetails):
                 raise ValueError(f'Input must be of type ContractDetails, not "{_cd.__class__}"')
             else:
                 self._cache_contract_details(_cd)
@@ -103,22 +107,25 @@ class ContractsApp(ibk.base.BaseApp):
         # Save the new contract information
         self.save_cached_contracts()
 
-    def _cache_contract_details(self, _cd):
+    def _cache_contract_details(self, _cd: ContractDetails) -> None:
         """ Cache a ContractDetails object.
         """
-        if not isinstance(_cd, ibapi.contract.ContractDetails):
+        if not isinstance(_cd, ContractDetails):
             raise ValueError(f'Unsupported type: "{_cd.__class__}". Expected ContractDetails.')
         else:
             self._saved_contract_details[_cd.contract.localSymbol] = _cd
         
-    def find_matching_contract_details(self, max_wait_time=None, **kwargs):
+    def find_matching_contract_details(
+        self,
+        max_wait_time: Optional[int] = None,
+        **kwargs) -> Optional[list[ContractDetails]]:
         """Find a list of matching contracts given some desired attributes.
 
         Arguments:
             max_wait_time (int): the maximum time (in seconds) to wait
                         for a response from the IB API
             kwargs: The key/value pairs of variables that appear in the
-                ibapi.contract.Contract class. The user can specify
+                Contract class. The user can specify
                 as many or as few of these as desired.
 
         Returns: (list) a list of ContractDetails objects - one for each
@@ -134,14 +141,17 @@ class ContractsApp(ibk.base.BaseApp):
         # Return the matching contract details
         return contract_details
 
-    def find_best_matching_contract_details(self, max_wait_time=None, **kwargs):
+    def find_best_matching_contract_details(
+        self,
+        max_wait_time: Optional[int] = None,
+        **kwargs) -> Optional[list[ContractDetails]]:
         """Find 'best' contract among possibilities matching desired attributes.
 
         Arguments:
             max_wait_time (int): the maximum time (in seconds) to wait
                         for a response from the IB API
             kwargs: The key/value pairs of variables that appear in the
-                ibapi.contract.Contract class. The user can specify
+                Contract class. The user can specify
                 as many or as few of these as desired.
 
         Returns: (ContractDetails) the 'best' matching ContractDetails object.
@@ -169,7 +179,11 @@ class ContractsApp(ibk.base.BaseApp):
             self._cache_contract_details(_cd)
             return _cd
 
-    def find_next_live_futures_contract(self, max_wait_time=None, min_days_until_expiry=1, **kwargs):
+    def find_next_live_futures_contract(
+        self, 
+        max_wait_time: Optional[int] = None,
+        min_days_until_expiry: int = 1,
+        **kwargs) -> Contract:
         """ Get the next live S&P E-Mini (ES) contract that has some time until expiry.
         
             Example usage:
@@ -182,21 +196,26 @@ class ContractsApp(ibk.base.BaseApp):
             kwargs['secType'] = 'FUT'
 
         # Get matching contract_details
-        contract_details = self.find_matching_contract_details(
+        contract_details_unsorted = self.find_matching_contract_details(
                 max_wait_time=max_wait_time, **kwargs)
 
+        # Sort the contract details by expiry
+        contract_details_sorted = sorted(contract_details_unsorted,
+            key=lambda x: x.realExpirationDate)
+
         # Find the nearest contract with sufficient days until expiration
-        exp_dates = np.array([pd.Timestamp(c.realExpirationDate).date() for c in contract_details])
+        exp_dates = pd.DatetimeIndex([c.realExpirationDate for c in contract_details_sorted])
         idx = np.where(exp_dates > pd.Timestamp.now() + pd.DateOffset(days=min_days_until_expiry))[0][0]
-        next_contract = contract_details[idx].contract
+        next_contract = contract_details_sorted[idx].contract
         
         # Cache the contract
-        self._cache_contract_details(contract_details[idx])
+        self._cache_contract_details(contract_details_sorted[idx])
         
         # Return the next contract
         return next_contract
 
-    def get_continuous_futures_contract_details(self, symbol, **kwargs):
+    def get_continuous_futures_contract_details(
+        self, symbol: str, **kwargs) -> Optional[ContractDetails]:
         """ Get the continuous futures ContractDetails for a given symbol.
         """
         # Get the contract details for a given symbol
@@ -215,7 +234,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise ValueError('Expected a single match, but found multiple possible matches.')
 
-    def get_market_rule_info(self, rule_ids, max_wait_time=None):
+    def get_market_rule_info(
+        self,
+        rule_ids: list[int],
+        max_wait_time: Optional[int] = None) -> list[str]:
         """Get market rule information based on rule ids.
 
            Arguments:
@@ -239,7 +261,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise ValueError('Request has failed.')
 
-    def get_trading_intervals(self, contract_details, liquid_hours=False):
+    def get_trading_intervals(
+        self,
+        contract_details: ContractDetails,
+        liquid_hours: bool = False) -> tuple[list, list]:
         """ Extract the trading intervals for a ContractDetails object.
 
             Arguments:
@@ -280,7 +305,10 @@ class ContractsApp(ibk.base.BaseApp):
 
         return start, end
 
-    def is_in_trading_hours(self, contract, target=None, liquid_hours=False):
+    def is_in_trading_hours(
+        self,
+        contract: Contract, target: Optional[datetime.datetime]=None,
+        liquid_hours: bool = False) -> bool:
         """ Determine whether a contract is trading at a given time.
 
             Arguments:
@@ -292,9 +320,9 @@ class ContractsApp(ibk.base.BaseApp):
                 liquid_hours: (bool) whether we want to just use the liquid
                     hours instead of all trading hours.
         """    
-        if isinstance(contract, ibapi.contract.Contract):
+        if isinstance(contract, Contract):
             contract_details = self.get_contract_details(contract.localSymbol)
-        elif not isinstance(contract, ibapi.contract.ContractDetails):
+        elif not isinstance(contract, ContractDetails):
             raise ValueError('Input "contract" must be either a Contract or ContractDetails object.')
 
         # Use the current time if none is provided
@@ -336,7 +364,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             super().error(reqId, errorCode, errorString)
 
-    def _request_contract_details(self, partial_contract, max_wait_time=None):
+    def _request_contract_details(
+        self,
+        partial_contract: Contract,
+        max_wait_time: Optional[int] = None) -> list[ContractDetails]:
         """Find all matching contracts given a partial contract.
         Upon execution of IB backend, the EWrapper.reqContractDetails is called,
         which is over-ridden to save the contracts to a class dictionary.
@@ -366,10 +397,10 @@ class ContractsApp(ibk.base.BaseApp):
             time.sleep(0.05)
         return self._contract_details[req_id]
 
-    def _create_partial_contract(self, **kwargs):
+    def _create_partial_contract(self, **kwargs) -> Contract:
         """ Create a partial contract from key/value pairs. """
         # Create a contract using the user-provided information
-        partial_contract = ibapi.contract.Contract()
+        partial_contract = Contract()
         for key, val in kwargs.items():
             if not hasattr(partial_contract, key):
                 raise ValueError(f'Unsupported Contract variable name was provided: {key}')
@@ -377,51 +408,57 @@ class ContractsApp(ibk.base.BaseApp):
                 partial_contract.__setattr__(key, val)   
         return partial_contract
 
-    def _select_contract(self, contract, possible_contracts):
-        if len(possible_contracts) == 1:
+    def _select_contract(
+        self, 
+        contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:
+        if len(contract_details) == 1:
             # If there is only a single match, then return it
-            return possible_contracts[0]
-        if len(possible_contracts) == 0:
+            return contract_details[0]
+        if len(contract_details) == 0:
             # If there are no matches, return None
             return None
         elif 'STK' == contract.secType:
-            return self._select_equity_contract(contract, possible_contracts)
+            return self._select_equity_contract(contract, contract_details)
         elif 'FUT' == contract.secType:
-            return self._select_futures_contract(contract, possible_contracts)
+            return self._select_futures_contract(contract, contract_details)
         elif 'OPT' == contract.secType:
-            return self._select_options_contract(contract, possible_contracts)
+            return self._select_options_contract(contract, contract_details)
         elif 'IND' == contract.secType:
-            return self._select_index_contract(contract, possible_contracts)
+            return self._select_index_contract(contract, contract_details)
         elif 'CASH' == contract.secType:
-            return self._select_forex_contract(contract, possible_contracts)
+            return self._select_forex_contract(contract, contract_details)
         elif 'BOND' == contract.secType:
-            return self._select_bond_contract(contract, possible_contracts)
+            return self._select_bond_contract(contract, contract_details)
         elif 'CMDTY' == contract.secType:
-            return self._select_commodity_contract(contract, possible_contracts)
+            return self._select_commodity_contract(contract, contract_details)
         elif 'FUND' == contract.secType:
-            return self._select_mutual_fund_contract(contract, possible_contracts)
+            return self._select_mutual_fund_contract(contract, contract_details)
         elif 'FOP' == contract.secType:
-            return self._select_futures_option_contract(contract, possible_contracts)
+            return self._select_futures_option_contract(contract, contract_details)
         else:
             raise ValueError('Invalid secType: {}'.format(contract.secType))
 
-    def _select_equity_contract(self, target_contract, possible_contracts):
+    def _select_equity_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:
         # Select the proper contract
         supported_exchanges = {'USD' : ["NYSE", 'NASDAQ', 'AMEX', 'ARCA', 'BATS']}
         
         # Use SMART exchange if no exchange is specified
         if not target_contract.exchange:
-            possible_contracts = [_ct for _ct in possible_contracts if _ct.exchange == 'SMART']
+            contract_details = [_ct for _ct in contract_details if _ct.exchange == 'SMART']
         
-        if len(possible_contracts) == 0:
+        if len(contract_details) == 0:
             return None
         
         # Filter to keep just contracts with the supported primary exchanges
         if target_contract.currency in supported_exchanges:
             exchanges = supported_exchanges[target_contract.currency]
-            pex_contracts = [_ct for _ct in possible_contracts if _ct.primaryExchange in exchanges]
+            pex_contracts = [_ct for _ct in contract_details if _ct.primaryExchange in exchanges]
         else:
-            pex_contracts = possible_contracts
+            pex_contracts = contract_details
             
         if len(pex_contracts) == 0:
             return None
@@ -450,7 +487,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise ValueError('Unsupported filter type: {}'.format(filter_type))
 
-    def _select_futures_contract(self, target_contract, contract_details):
+    def _select_futures_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:
         """Select the desired futures contract in case there are multiple matches."""
         matching_contracts = self._filter_derivative_contracts(contract_details,
                                 target_contract, filter_type='third_friday')
@@ -461,7 +501,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
 
-    def _select_options_contract(self, target_contract, contract_details):
+    def _select_options_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         """Select the desired options contract in case there are multiple matches."""
         matching_contracts = self._filter_derivative_contracts(contract_details,
                                 target_contract, filter_type='third_friday')
@@ -479,7 +522,10 @@ class ContractsApp(ibk.base.BaseApp):
             else:
                 raise ValueError('Multiple matching contracts - the search must be more specific.')
 
-    def _select_forex_contract(self, target_contract, contract_details):
+    def _select_forex_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -487,7 +533,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise ValueError('Multiple matching contracts - the search must be more specific.')
 
-    def _select_index_contract(self, target_contract, contract_details):
+    def _select_index_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -495,7 +544,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _select_bond_contract(self, target_contract, contract_details):
+    def _select_bond_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -503,7 +555,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _select_commodity_contract(self, target_contract, contract_details):
+    def _select_commodity_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -511,7 +566,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _select_mutual_fund_contract(self, target_contract, contract_details):
+    def _select_mutual_fund_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -519,7 +577,10 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             raise NotImplementedError('Multiple matches - needs better implementation.')
 
-    def _select_futures_option_contract(self, target_contract, contract_details):
+    def _select_futures_option_contract(
+        self, 
+        target_contract: Contract, 
+        contract_details: list[ContractDetails]) -> Optional[Contract]:        
         if not contract_details:
             return None
         elif len(contract_details) == 1:
@@ -533,19 +594,19 @@ class ContractsApp(ibk.base.BaseApp):
         with open(ibk.constants.FILENAME_CONTRACTS, 'rb') as handle:
             self._saved_contract_details = pickle.load(handle)
 
-    def _get_contract_from_dict(self, info):
+    def _get_contract_from_dict(self, info: dict) -> Contract:
         """Create a Contract object from a dictionary of keys/values."""
-        _contract = ibapi.contract.Contract()
+        _contract = Contract()
         for key, val in info.items():
             _contract.__setattr__(key, val)
         return _contract
 
-    def _copy_contract(self, target_contract):
+    def _copy_contract(self, target_contract: Contract) -> Contract:
         """Create a copy of a Contract object"""
         ct_dict = target_contract.__dict__
         return self._get_contract_from_dict(ct_dict)
 
-    def save_cached_contracts(self):
+    def save_cached_contracts(self) -> None:
         """ Save the cached contract details to file.
         
             Calling this method saves the cached contract details
@@ -556,12 +617,12 @@ class ContractsApp(ibk.base.BaseApp):
         with open(ibk.constants.FILENAME_CONTRACTS, 'wb') as handle:
             pickle.dump(self._saved_contract_details, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _clean_position_contracts(self, target_contract):
+    def _clean_position_contracts(self, target_contract: Contract) -> Contract:
         """Make changes to contracts that are returned from get_positions in
            order to make them findable within IB's contract universe.
            """
         if 'CASH' == target_contract.secType:
-            _contract = ibapi.contract.Contract()
+            _contract = Contract()
             _contract.symbol = target_contract.symbol
             _contract.currency = target_contract.currency
             _contract.secType = 'CASH'
@@ -574,21 +635,21 @@ class ContractsApp(ibk.base.BaseApp):
     # Methods for handling response from Server
     ################################################################
 
-    def contractDetails(self, reqId, contractDetailsObject):
+    def contractDetails(self, reqId, contractDetailsObject: ContractDetails) -> None:
         """Callback from reqContractDetails for non-bond contracts."""
         super().contractDetails(reqId, contractDetailsObject)
         self._contract_details[reqId].append(contractDetailsObject)
 
-    def bondContractDetails(self, reqId, contractDetailsObject):
+    def bondContractDetails(self, reqId, contractDetailsObject: ContractDetails) -> None:
         """Callback from reqContractDetails, specifically for bond contracts."""
         super().contractDetails(reqId, contractDetailsObject)
         self._contract_details[reqId].append(contractDetailsObject)
 
-    def contractDetailsEnd(self, reqId):
+    def contractDetailsEnd(self, reqId: int) -> None:
         super().contractDetailsEnd(reqId)
         self._contract_details_request_complete[reqId] = True
 
-    def marketRule(self, marketRuleId, priceIncrements):
+    def marketRule(self, marketRuleId: int, priceIncrements: list) -> None:
         super().marketRule(marketRuleId, priceIncrements)
         self._market_rule_info[marketRuleId] = priceIncrements
 

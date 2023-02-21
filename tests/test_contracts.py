@@ -246,7 +246,7 @@ class ContractsTest(unittest.TestCase):
         # Get the next liquid ES contract
         min_days_until_expiry = 10
         _contract = self.app.find_next_live_futures_contract(min_days_until_expiry=min_days_until_expiry, 
-                                                   symbol='ES', exchange='GLOBEX', currency='USD')
+                                                   symbol='ES', exchange='CME', currency='USD')
 
         # Check that the contract expiry is in the future
         expiry_date = pd.Timestamp(_contract.lastTradeDateOrContractMonth)
@@ -266,7 +266,7 @@ class ContractsTest(unittest.TestCase):
 
         ctr += 1
         with self.subTest(i=ctr):
-            self.assertEqual(_contract.exchange, 'GLOBEX', msg='Unexpected exchange.')
+            self.assertEqual(_contract.exchange, 'CME', msg='Unexpected exchange.')
             
             
 if __name__ == '__main__':
