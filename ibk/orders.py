@@ -292,6 +292,10 @@ class OrdersApp(ibk.base.BaseApp):
         _order.totalQuantity = totalQuantity
         _order.orderType = orderType
 
+        # Need to set deprecated members or TWS will through exception
+        _order.eTradeOnly = False
+        _order.firmQuoteOnly = False
+
         # Set any additional specifications in the Order
         for key, val in kwargs.items():
             if not hasattr(_order, key):
