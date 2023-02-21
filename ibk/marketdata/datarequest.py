@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections import Iterable
+from collections.abc import Iterable
 import datetime
 import copy
 import ibapi.contract
