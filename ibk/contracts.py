@@ -79,21 +79,29 @@ class ContractsApp(ibk.base.BaseApp):
         else:
             return contract_details.contract
 
-    def is_saved_contract(self, localSymbol):
+    def is_saved_contract(self, localSymbol: str):
+        """Check whether a contract is saved in the cache."""
         return localSymbol in self._saved_contract_details
         
-    def add_to_saved_contract_details(self, _contract_details_list):
-        if not isinstance(_contract_details_list, list):
-            _contract_details_list = [_contract_details_list]
+    def save_contract_details(self, contract_details_list):
+        """Save a list of instruments' contract details along with other cached contracts.
 
-        for _cd in _contract_details_list:
+        Args:
+          contract_details_list: a list of ContractDetails objects to be saved.
+
+        Returns: None
+        """
+        if not isinstance(contract_details_list, list):
+            contract_details_list = [contract_details_list]
+
+        for _cd in contract_details_list:
             if not isinstance(_cd, ibapi.contract.ContractDetails):
                 raise ValueError(f'Input must be of type ContractDetails, not "{_cd.__class__}"')
             else:
                 self._cache_contract_details(_cd)
         
         # Save the new contract information
-        self.save_contracts()
+        self.save_cached_contracts()
 
     def _cache_contract_details(self, _cd):
         """ Cache a ContractDetails object.
@@ -537,7 +545,7 @@ class ContractsApp(ibk.base.BaseApp):
         ct_dict = target_contract.__dict__
         return self._get_contract_from_dict(ct_dict)
 
-    def save_contracts(self):
+    def save_cached_contracts(self):
         """ Save the cached contract details to file.
         
             Calling this method saves the cached contract details
