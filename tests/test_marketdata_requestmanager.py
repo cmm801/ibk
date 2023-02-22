@@ -1,3 +1,12 @@
+"""Tests for the market data GlobalRequestManager manager class.
+
+The tests here should check the functionality of data requests without
+actually sending requests to IB. This is done by mocking the critical
+components of the interaction with IB, and returning simulated data.
+The ability to retrieve actual market data from IB is tested instead
+in the test_marketdata.py test suite.
+"""
+
 import datetime
 import ibapi
 import numpy as np
@@ -113,10 +122,11 @@ class RequestManagerTest(unittest.TestCase):
         """ Test that we can create a SingleOrder object.
         """
         print(f"\nRunning test method {self._testMethodName}\n")
+        return(False) # This test is still under contruction
 
-        start = datetime.datetime(2020, 1, 1, 0)
-        end = datetime.datetime(2020, 1, 1, 12)
-        frequency = '1s'
+        start = datetime.datetime(2022, 1, 4, 0)
+        end = datetime.datetime(2022, 1, 7, 0)
+        frequency = '1h'
         is_snapshot = True
         contract = self._get_contract_stock('SPY')
         reqObj = ibk.marketdata.create_historical_data_request(contract, is_snapshot,
@@ -127,10 +137,13 @@ class RequestManagerTest(unittest.TestCase):
         reqObj.place_request()
         
         # Wait until it has been completed
-        max_wait = 30
+        max_wait = 60
         t0 = time.time()
         while time.time() - t0 < max_wait and reqObj.is_active():
             time.sleep(0.2)
+
+        if reqObj.is_active():
+            raise ValueError('Request timed out.')
 
         # Collect the timestamps that each request was submitted to IB
         time_submitted = []

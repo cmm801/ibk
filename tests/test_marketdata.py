@@ -272,12 +272,12 @@ class MarketDataTest(unittest.TestCase):
         print(f"\nRunning test method {self._testMethodName}\n")
 
         # Get a single contract
-        contract = self.app.contracts_app.find_next_live_futures_contract(symbol='NQ',
-                                                                          exchange='GLOBEX')
+        contract = self.app.contracts_app.find_next_live_futures_contract(
+            symbol='NQ', exchange='CME')
 
         # Create the request object
-        reqObj = ibk.marketdata.create_streaming_bar_data_request(contract, frequency='5s',
-                                                                  use_rth=False, data_type="TRADES")
+        reqObj = ibk.marketdata.create_streaming_bar_data_request(
+            contract, frequency='5s', use_rth=False, data_type="TRADES")
         
         # Save request for automated tearDown
         self.reqObjList = [reqObj]
@@ -397,7 +397,7 @@ class MarketDataTest(unittest.TestCase):
 
         # Get a single contract
         contract = self.app.contracts_app.find_next_live_futures_contract(symbol='ES',
-                                                                          exchange='GLOBEX')
+                                                                          exchange='CME')
 
         # Create the request object
         n_ticks = 80
@@ -443,7 +443,7 @@ class MarketDataTest(unittest.TestCase):
         # Create the request object
         self.reqObjList = []
         for contract in contractList:
-            self.reqObjList.append(ibk.marketdata.create_first_date_request(contract, data_type='TRADES'))
+            self.reqObjList.append(ibk.marketdata.create_first_date_request(contract))
 
         # Sleep until the requests are complete
         for idx, reqObj in enumerate(self.reqObjList):
