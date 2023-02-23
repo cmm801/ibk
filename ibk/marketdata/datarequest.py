@@ -11,7 +11,7 @@ import warnings
 import xml.etree.ElementTree as ET
 
 import ibk.helper
-from ibk.constants import TIMEZONE_TWS
+from ibk.constants import TIMEZONE_UTC
 import ibk.marketdata.constants
 
 
@@ -440,8 +440,8 @@ class HistoricalDataRequest(DataRequestForContract):
         if d is None or not d:
             self._start = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_TWS)
-            self._start = dt.replace(tzinfo=None)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_UTC)
+            self._start = dt
 
     @property
     def end(self):
@@ -452,8 +452,8 @@ class HistoricalDataRequest(DataRequestForContract):
         if d is None or not d:
             self._end = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_TWS)
-            self._end = dt.replace(tzinfo=None)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_UTC)
+            self._end = dt
 
     # abstractmethod
     def get_data(self):
@@ -517,11 +517,12 @@ class HistoricalDataRequest(DataRequestForContract):
         return self._get_restrictions_on_historical_requests()
 
     @property
-    def endDateTime(self):
+    def endDateTime(self) -> str:
         if not self.end:
             return ''
         else:
-            return ibk.helper.convert_datetime_to_tws_date(self.end)
+            return ibk.helper.convert_datetime_to_tws_date(
+                self.end, tz_name=TIMEZONE_UTC)
 
     @property
     def keepUpToDate(self):
@@ -606,8 +607,8 @@ class HistoricalDataMultiRequest:
         if d is None or not d:
             self._start = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_TWS)
-            self._start = dt.replace(tzinfo=None)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_UTC)
+            self._start = dt
 
     @property
     def end(self):
@@ -618,8 +619,8 @@ class HistoricalDataMultiRequest:
         if d is None or not d:
             self._end = ''
         else:
-            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_TWS)
-            self._end = dt.replace(tzinfo=None)
+            dt = ibk.helper.convert_to_datetime(d, tz_name=TIMEZONE_UTC)
+            self._end = dt
 
     def is_active(self):
         return any([reqObj.is_active() for reqObj in self.subrequests])
@@ -913,7 +914,7 @@ class HistoricalTickDataRequest(DataRequestForContract):
             self._start = ''
         else:
             dt = ibk.helper.convert_to_datetime(d)
-            self._start = dt.replace(tzinfo=None)
+            self._start = dt
 
     @property
     def end(self):
@@ -925,21 +926,23 @@ class HistoricalTickDataRequest(DataRequestForContract):
             self._end = ''
         else:
             dt = ibk.helper.convert_to_datetime(d)
-            self._end = dt.replace(tzinfo=None)
+            self._end = dt
 
     @property
     def startDateTime(self):
         if not self.start:
             return ''
         else:
-            return ibk.helper.convert_datetime_to_tws_date(self.start)
+            return ibk.helper.convert_datetime_to_tws_date(
+                self.start, tz_name=TIMEZONE_UTC)
 
     @property
-    def endDateTime(self):
+    def endDateTime(self) -> str:
         if not self.end:
             return ''
         else:
-            return ibk.helper.convert_datetime_to_tws_date(self.end)
+            return ibk.helper.convert_datetime_to_tws_date(
+                self.end, tz_name=TIMEZONE_UTC)
 
     # abstractmethod
     def _initialize_data(self):
@@ -1016,8 +1019,8 @@ class HeadTimeStampDataRequest(DataRequestForContract):
 
     # abstractmethod
     def _append_data(self, new_data):
-        dt = ibk.helper.convert_datestr_to_datetime(new_data)
-        self._market_data = dt.replace(tzinfo=None)
+        dt = ibk.helper.convert_datestr_to_datetime(new_data, tz_name=TIMEZONE_UTC)
+        self._market_data = dt
 
     # abstractmethod
     def _place_request_with_ib_core(self, app):

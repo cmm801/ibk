@@ -1,13 +1,20 @@
+from __future__ import annotations  # to use type hints for class methods
+
 import datetime
 import pytz
 import re
 import math
 import pandas as pd
 
+from typing import Optional, Tuple, Union
+
+
 import ibk.constants
 
 
-def convert_to_datetime(input_dt, tz_name=None):
+def convert_to_datetime(
+    input_dt: Union[str, datetime.datetime, datetime.date, pd.Timestamp],
+    tz_name: str) -> datetime.datetime:
     """ Convert an input date object into a datetime object.
     
         Accepts inputs of type string, datetime.datetime, datetime.date, 
@@ -26,11 +33,10 @@ def convert_to_datetime(input_dt, tz_name=None):
     else:
         raise ValueError('Unsupported date type: {}'.format(input_dt.__class__))
     
-def convert_datestr_to_datetime(input_datestr, tz_name=None):
+def convert_datestr_to_datetime(
+        input_datestr: str, tz_name: str) -> datetime.datetime:
     """ Convert a string representing a date into a datetime.
-        
-        If the date has time zone information attached, then
-        the result will be converted to the target time zone.
+
         Arguments:
             input_datestr: (str) a string representing a date or 
                 datetime. Time zone information can optionally be
@@ -38,12 +44,8 @@ def convert_datestr_to_datetime(input_datestr, tz_name=None):
                 information is provided, then no conversion will
                 be performed.
             tz_name: (str) the target time zone name to which
-                the input date/time should be converted. If no
-                target is provided, the target time zone will be
-                assumed to be the TWS time zone.
+                the input date/time should be converted.
     """
-    if tz_name is None:
-        tz_name = ibk.constants.TIMEZONE_TWS
     tz_tgt = pytz.timezone(tz_name)
 
     parts = [x for x in input_datestr.split(' ') if x]
@@ -65,31 +67,33 @@ def convert_datestr_to_datetime(input_datestr, tz_name=None):
 
     return dt_tgt
 
-def convert_datetime_to_tws_date(d, tz_name=None):
-    if tz_name is not None:
-        tzone = pytz.timezone(tz_name)
-        dt = d.astimezone(tzone)
-    else:
-        dt = d
-    return datetime.datetime.strftime(dt, '%Y%m%d %H:%M:%S')
+def convert_datetime_to_tws_date(
+        d: Union[datetime.date, datetime.datetime, pd.Timestamp], tz_name: str) -> str:
+    if d.tzinfo is None:
+        dt = pytz.utc.localize(d)  # Assume the date is UTC if no time zone is included
+    elif d.tzname() != tz_name:
+        raise ValueError('Conversion between time zones still needs to be implemented.')
 
-def convert_utc_timestamp_to_datetime(tmstmp, tz_name=ibk.constants.TIMEZONE_UTC):
+    return datetime.datetime.strftime(dt, '%Y%m%d %H:%M:%S %Z')
+
+def convert_utc_timestamp_to_datetime(
+        tmstmp: float, tz_name: str) -> datetime.datetime:
     tzone = pytz.timezone(tz_name)
     dt_utc = pytz.utc.localize(datetime.datetime.utcfromtimestamp(tmstmp))
     return dt_utc.astimezone(tzone)
 
-def get_utc_datetime_from_utc_timestamp(tmstmp):
+def get_utc_datetime_from_utc_timestamp(tmstmp: float) -> datetime.datetime:
     d = datetime.datetime.utcfromtimestamp(tmstmp)
     return pytz.utc.localize(d)
 
-def get_utc_timestamp_from_datetime(d):
+def get_utc_timestamp_from_datetime(d: Union[datetime.date, datetime.datetime]) -> float:
     if d.tzinfo is None:
         d_tz = pytz.utc.localize(d)
     else:
         d_tz = d.astimezone(pytz.utc)
     return d_tz.timestamp()
 
-def get_third_friday(year, month):
+def get_third_friday(year: int, month: int) -> datetime.date:
     """Returns the third friday, given a year and month"""
     dt = datetime.date(year, month, 1)
     if dt.weekday() <= 4:
@@ -124,7 +128,9 @@ class TimeHelper(object):
                              months={1: '20 Y'},
                             )
 
-    def __init__(self, time_val=None, time_type=None):
+    def __init__(self,
+                time_val: Optional[str] = None,
+                time_type: Optional[str] = None) -> None:
         super().__init__()
         if time_val is None and time_type is None:
             self.n = self.units = None
@@ -138,41 +144,41 @@ class TimeHelper(object):
             raise ValueError('Unknown time type: {}'.format(time_type))
 
     @classmethod
-    def from_attributes(cls, n, units):
+    def from_attributes(cls, n: int, units: str) -> TimeHelper:
         obj = cls()
         obj.n = n
         obj.units = units
         return obj
 
     @classmethod
-    def from_timedelta(cls, delta):
+    def from_timedelta(cls, delta: datetime.timedelta) -> TimeHelper:
         obj = cls()
         obj.n = delta.total_seconds()
         obj.units = 'seconds'
         return obj
 
-    def to_frequency(self):
+    def to_frequency(self) -> str:
         unit = self._get_converted_type('frequency')
         return '{}{}'.format(self.n, unit)
 
-    def to_tws_durationStr(self):
+    def to_tws_durationStr(self) -> str:
         unit = self._get_converted_type('duration')
         return '{} {}'.format(math.ceil(self.n), unit)
 
-    def to_tws_barSizeSetting(self):
+    def to_tws_barSizeSetting(self) -> str:
         unit = self._get_converted_type('bar_size')
         return '{} {}'.format(math.ceil(self.n), unit)
 
-    def to_timedelta(self):
+    def to_timedelta(self) -> datetime.timedelta:
         return self._get_timedelta_from_inputs(self.n, self.units)
 
-    def as_units(self, to_units):
+    def as_units(self, to_units: str) -> TimeHelper:
         """Get a new class with different units."""
         new_n = self.n * self._get_conversion_factor(self.units, to_units)
         input_args = dict(n=new_n, units=to_units)
         return self.__class__.from_attributes(**input_args)
 
-    def get_max_tws_duration(self):
+    def get_max_tws_duration(self) -> str:
         # Find the rule that is at least as great as the input duration
         dur_map = self.MAX_TWS_DURATIONS[self.units]
         max_dur = None
@@ -181,16 +187,16 @@ class TimeHelper(object):
                 max_dur = dur_map[d]
         return max_dur
 
-    def get_max_tws_duration_timedelta(self):
+    def get_max_tws_duration_timedelta(self) -> datetime.timedelta:
         max_dur = self.get_max_tws_duration()
         _n, _units = self._parse_duration(max_dur)
         return self._get_timedelta_from_inputs(_n, _units)
 
-    def total_seconds(self):
+    def total_seconds(self) -> int:
         td = self.to_timedelta()
         return td.total_seconds()
 
-    def get_min_tws_duration(self):
+    def get_min_tws_duration(self) -> str:
         tot_sec = self.total_seconds()
         if tot_sec < 3600 * 20:
             freq = 'seconds'
@@ -205,7 +211,7 @@ class TimeHelper(object):
 
         return self.as_units(freq).to_tws_durationStr()
 
-    def _get_timedelta_from_inputs(self, _n, _units):
+    def _get_timedelta_from_inputs(self, _n: int, _units: str) -> datetime.timedelta:
         if _units in ['months', 'years']:
             # timedelta does not support months or years so we convert to days
             factor = self._get_conversion_factor(_units, 'days')
@@ -214,20 +220,20 @@ class TimeHelper(object):
             input_args = {_units: _n}
         return datetime.timedelta(**input_args)
 
-    def _parse_frequency(self, time_val):
+    def _parse_frequency(self, time_val: str) -> Tuple[int, str]:
         n = float(re.sub('[a-zA-Z]', '', time_val))
         orig_unit = re.sub('[\.0-9]', '', time_val)
         standard_unit = self._retrieve_unit(orig_unit, 'frequency')
         return n, standard_unit
 
-    def _parse_duration(self, time_val):
+    def _parse_duration(self, time_val: str) -> Tuple[int, str]:
         parsed = time_val.split(' ')
         n = math.ceil(float(parsed[0]))
         orig_unit = parsed[1]
         standard_unit = self._retrieve_unit(orig_unit, 'duration')
         return n, standard_unit
 
-    def _parse_bar_size(self, time_val):
+    def _parse_bar_size(self, time_val: str) -> Tuple[int, str]:
         parsed = time_val.split(' ')
         n = math.ceil(float(parsed[0]))
         unit = parsed[1]
@@ -236,7 +242,7 @@ class TimeHelper(object):
         standard_unit = self._retrieve_unit(unit, 'bar_size')
         return n, standard_unit
 
-    def _get_converted_type(self, to_type):
+    def _get_converted_type(self, to_type: str) -> str:
         unit = None
         for k, v in self.UNITS_MAP[to_type].items():
             if v == self.units:
@@ -248,18 +254,17 @@ class TimeHelper(object):
                 unit += 's'  # Make units plural for minutes and hours
         return unit
 
-    def _retrieve_unit(self, target_unit, time_type):
+    def _retrieve_unit(self, target_unit: str, time_type: str) -> str:
         if target_unit not in self.UNITS_MAP[time_type]:
             raise ValueError('Unsupported unit for {}: {}'.format(time_type, target_unit))
         else:
             return self.UNITS_MAP[time_type][target_unit]
 
-    def _is_valid_bar_size(self, bar_size):
+    def _is_valid_bar_size(self, bar_size: str) -> bool:
         n, units = self._parse_bar_size(bar_size)
         return n in self.MAX_TWS_DURATIONS[units]
 
-    def _get_conversion_factor(self, from_units, to_units):
-
+    def _get_conversion_factor(self, from_units: str, to_units: str) -> float:
         if from_units != 'seconds' and to_units != 'seconds':
             from_factor = self._get_conversion_factor(from_units, 'seconds')
             to_factor = self._get_conversion_factor(to_units, 'seconds')
@@ -290,5 +295,5 @@ class TimeHelper(object):
         else:
             raise ValueError('Unknown frequency unit: {}'.format(_units))
 
-        return factor if not invert else 1/factor
+        return float(factor) if not invert else 1.0/factor
 
