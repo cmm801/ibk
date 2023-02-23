@@ -47,6 +47,8 @@ def setup_logger():
              "%(filename)s:%(lineno)d %(message)s"
     datefmt = '%y%m%d_%H:%M:%S'
 
+    #logging.basicConfig(filename=filename, filemode='a', level=logging.INFO)
+
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     

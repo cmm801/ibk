@@ -239,7 +239,10 @@ class DataRequestQueue:
                 # Check that this is a valid request
                 raise ibk.errors.DataRequestError(msg)
             elif reqObj.status != mdconst.STATUS_REQUEST_QUEUED:
-                raise ValueError('Unexpected status: this request is no longer queued.')
+                app = self._get_app()
+                error_message = 'Unexpected status: this request is no longer queued.'
+                app.logger.error(f'{self.__class__}:_process_requests:{error_message}:{reqObj.status}:{reqObj.__dict__}')
+                raise ValueError(error_message)
             else:
                 reqObj.status = mdconst.STATUS_REQUEST_PROCESSING
 
