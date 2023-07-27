@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+
 import datetime
 import copy
+import tempfile
+import xml.etree.ElementTree as ET
 import ibapi.contract
 import numpy as np
 import pandas as pd
 import pytz
-import tempfile
-import warnings
-import xml.etree.ElementTree as ET
 
 import ibk.helper
 from ibk.constants import TIMEZONE_UTC
